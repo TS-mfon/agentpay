@@ -1,0 +1,12 @@
+import { cp,mkdir,readFile,writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+const destination=join('.local',`agentpay-prototype-${Date.now()}`);
+await mkdir(destination,{recursive:true});
+await cp('.next/standalone',destination,{recursive:true});
+await mkdir(join(destination,'.next'),{recursive:true});
+await cp('.next/static',join(destination,'.next/static'),{recursive:true});
+await cp('public',join(destination,'public'),{recursive:true});
+await cp('README.md',join(destination,'README.md'));
+await cp('LICENSE',join(destination,'LICENSE'));
+await writeFile(join(destination,'RUN.txt'),'Run: AGENTPAY_MODE=demo HOSTNAME=0.0.0.0 PORT=3000 node server.js\nThis package demonstrates simulated payments. Live use needs Atlas and deployed contracts.\n');
+console.log(`Runnable prototype package: ${destination}`);

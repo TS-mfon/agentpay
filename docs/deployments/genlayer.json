@@ -1,0 +1,8 @@
+{
+  "network": "GenLayer Studio Devnet",
+  "chainId": 61997,
+  "contract": "0xF4d09C3a617c045BC1393645397D5C17e2b94A34",
+  "transactionHash": "0x34a72671cf07eaab0420f23469f86b8cb88fe7d5a594e79a9e32d57acb242726",
+  "operator": "0x358652D0E7741E0274363c1e57C66978d8316e79",
+  "deployedAt": "2026-11-23T17:55:28.590Z"
+}

@@ -1,0 +1,12 @@
+[profile.default]
+src = "contracts/src"
+test = "contracts/test"
+out = "contracts/coverage-out"
+cache_path = "contracts/coverage-cache"
+libs = ["node_modules"]
+remappings = ["@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/"]
+solc_version = "0.8.24"
+evm_version = "shanghai"
+optimizer = true
+optimizer_runs = 200
+via_ir = true

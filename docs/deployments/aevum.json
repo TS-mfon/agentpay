@@ -1,0 +1,12 @@
+{
+  "network": "QDay Aevum Testnet",
+  "chainId": 44005,
+  "contract": "0xe271a7af38e6eb1cbac4be3d5efafa452878066b",
+  "transactionHash": "0x7ca1f47c70969170584e9a83ee162c787df53589c9ceecc1e962b77b9cc3edb5",
+  "block": "3936629",
+  "token": "0x456569838f1d43009A91ebA4263147Afd7233483",
+  "owner": "0x5857D41600CA608B83049938A14FA74A415535F1",
+  "executor": "0x7b708E7b4fE7bF0538e14f12178976F0d1D0e627",
+  "deployedAt": "2026-11-23T17:46:43.930Z",
+  "explorer": "https://explorer-test.qday.info/address/0xe271a7af38e6eb1cbac4be3d5efafa452878066b"
+}

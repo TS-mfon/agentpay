@@ -1,0 +1,179 @@
+@media (min-width: 1500px) {
+  .workspace { padding-top: 49px; }
+  .workspace-heading { margin-bottom: 34px; }
+}
+@media (max-width: 1180px) {
+  .sidebar { width: 218px; padding-left: 16px; padding-right: 16px; }
+  .main-shell { margin-left: 218px; width: calc(100% - 218px); }
+  .topbar { padding-left: 27px; padding-right: 27px; }
+  .workspace { padding: 33px 27px; }
+  .topbar-actions { gap: 12px; }
+  .breadcrumb { display: none; }
+  .topbar { justify-content: flex-end; }
+  .agent-identity { padding: 11px; }
+  .budget-label { flex-direction: column; gap: 6px; }
+  .service-price { gap: 16px; }
+  .setup-flow { grid-template-columns: 220px minmax(0, 1fr); }
+  .setup-journey { padding: 29px 21px; }
+  .setup-stage { padding: 33px 27px 28px; }
+  .journey-intro h2 { font-size: 24px; }
+  .welcome-content { padding: 36px 30px; }
+  .welcome-content h2 { font-size: 30px; }
+  .treasury-next-actions { flex-wrap: wrap; }
+  .treasury-next-actions > div { flex-basis: 100%; }
+}
+@media (max-width: 980px) {
+  .workspace-heading { align-items: flex-start; }
+  .agent-identity { display: none; }
+  .treasury-summary { grid-template-columns: 1fr 1.1fr; }
+  .balance-summary, .budget-summary { padding: 24px; }
+  .balance-summary > strong { font-size: 36px; }
+  .service-price { flex-direction: column; align-items: flex-end; gap: 9px; }
+  .mandate-limits { gap: 22px; }
+  .workspace-footer { flex-wrap: wrap; line-height: 1.7; }
+  .live-notice { flex-wrap: wrap; }
+  .live-notice > a { margin-left: 27px; }
+  .setup-flow { grid-template-columns: 1fr; }
+  .setup-journey { padding: 23px 26px 18px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .journey-intro, .journey-help { display: none; }
+  .setup-step-list { flex-direction: row; justify-content: space-between; margin: 0; gap: 10px; }
+  .setup-step-list button { flex-direction: column; align-items: center; gap: 8px; font-size: 12px; text-align: center; }
+  .setup-step-list li { flex: 1; }
+  .welcome-flow { grid-template-columns: 1fr; }
+  .welcome-art { min-height: 220px; }
+  .welcome-vault { width: 124px; height: 124px; border-radius: 27px; }
+  .welcome-vault svg { width: 59px; height: 59px; }
+  .welcome-orbit { top: 21%; right: 22%; padding: 12px; }
+  .welcome-orbit-two { top: auto; bottom: 17%; left: 21%; }
+  .welcome-content { padding: 30px; }
+}
+@media (max-width: 760px) {
+  .app-shell { display: block; }
+  .sidebar { position: static; width: 100%; padding: 20px 22px 15px; display: block; min-width: 0; }
+  .brand { font-size: 23px; }
+  .brand img { width: 32px; height: 32px; }
+  .sidebar-subtitle, .sidebar-bottom { display: none; }
+  .sidebar nav { flex-direction: row; gap: 5px; overflow-x: auto; padding: 16px 0 0; scrollbar-width: thin; max-width: 100%; }
+  .nav-item { flex-shrink: 0; font-size: 12px; gap: 8px; padding: 10px 11px; min-height: 44px; }
+  .nav-item svg { width: 17px; height: 17px; }
+  .main-shell { margin-left: 0; width: 100%; }
+  .topbar { min-height: 70px; padding: 10px 22px; justify-content: space-between; }
+  .topbar-actions { width: 100%; justify-content: space-between; gap: 11px; flex-wrap: wrap; }
+  .environment-badge { font-size: 11px; padding: 7px 10px; }
+  .wallet-button { font-size: 12px; }
+  .workspace { padding: 29px 22px 22px; }
+  .workspace-heading { margin-bottom: 24px; }
+  .workspace-heading h1 { font-size: 35px; }
+  .workspace-heading > div > p { font-size: 14px; }
+  .treasury-summary { grid-template-columns: 1fr 1.1fr; }
+  .balance-summary, .budget-summary { padding: 22px; }
+  .balance-summary > strong { font-size: 34px; }
+  .balance-summary > strong > span { font-size: 13px; }
+  .summary-note { font-size: 11px; }
+  .panel-heading { padding: 22px; }
+  .panel-heading h2, .section-heading h2 { font-size: 21px; }
+  .mandate-panel blockquote { margin-left: 22px; margin-right: 22px; font-size: 16px; }
+  .mandate-limits { padding-left: 22px; padding-right: 22px; gap: 18px; }
+  .mandate-limits strong { font-size: 16px; }
+  .mandate-limits small { display: block; margin-left: 0; margin-top: 5px; }
+  .panel-footer { padding-left: 22px; padding-right: 22px; }
+  .panel-footer > span { line-height: 1.65; }
+  .service-section { margin-top: 31px; }
+  .service-item { padding: 22px; gap: 14px; }
+  .service-price > strong { font-size: 15px; }
+  .controls-row { gap: 9px; }
+  .controls-row .secondary-button { min-height: 46px; font-size: 13px; }
+  .owner-controls .section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .workspace-footer > a { width: 100%; margin-top: 4px; }
+  .live-notice, .demo-notice { font-size: 12px; padding: 13px 15px; }
+  .live-notice > span { flex: 1 1 calc(100% - 27px); }
+  .setup-stage { padding: 28px 25px; }
+  .setup-stage-heading h2 { font-size: 30px; }
+  .setup-actions .primary-button { padding: 12px 15px; font-size: 13px; }
+}
+@media (max-width: 480px) {
+  .sidebar { padding-left: 18px; padding-right: 18px; }
+  .topbar { padding-left: 18px; padding-right: 18px; }
+  .topbar-actions { gap: 8px; }
+  .environment-badge { font-size: 10px; padding: 7px 8px; }
+  .workspace-docs-link, .wallet-button, .signout-button { font-size: 11px; }
+  .wallet-button svg { width: 14px; height: 14px; }
+  .wallet-connect { padding: 9px 10px; }
+  .workspace { padding: 28px 18px 22px; }
+  .workspace-heading h1 { font-size: 33px; }
+  .workspace-heading > div > p { font-size: 13px; }
+  .treasury-summary { grid-template-columns: 1fr; }
+  .balance-summary { border-right: 0; border-bottom: 1px solid var(--line); padding: 24px; }
+  .balance-summary > strong { font-size: 39px; }
+  .budget-summary { padding: 24px; }
+  .budget-label { flex-direction: column; gap: 7px; }
+  .panel-heading { padding: 22px 20px; gap: 12px; }
+  .panel-heading h2, .section-heading h2 { font-size: 20px; }
+  .version { font-size: 11px; padding: 7px 8px; }
+  .mandate-panel blockquote { margin: 0 20px 23px; font-size: 15px; padding-left: 16px; }
+  .mandate-limits { padding: 0 20px 23px; gap: 14px; flex-wrap: wrap; }
+  .mandate-limits > div { flex: 1 1 38%; }
+  .mandate-limits span { font-size: 12px; line-height: 1.5; }
+  .mandate-limits strong { font-size: 16px; }
+  .panel-footer { padding: 12px 20px; gap: 10px; flex-wrap: wrap; }
+  .panel-footer > span { font-size: 12px; }
+  .panel-footer > span svg { flex-shrink: 0; }
+  .section-heading > .subtle-label { display: none; }
+  .service-item { align-items: flex-start; flex-wrap: wrap; padding: 21px 20px; gap: 13px; }
+  .service-icon { width: 43px; height: 43px; }
+  .service-copy { width: calc(100% - 56px); }
+  .service-copy h3 { font-size: 16px; }
+  .service-copy p { font-size: 13px; }
+  .recipient-label { font-size: 11px; }
+  .service-price { margin-left: 56px; flex-direction: row; justify-content: space-between; align-items: center; width: calc(100% - 56px); gap: 10px; }
+  .service-price > strong { font-size: 14px; }
+  .service-price .secondary-button { min-height: 44px; font-size: 12px; padding: 9px 11px; }
+  .service-price .secondary-button svg { display: none; }
+  .payment-panel > .panel-heading { align-items: flex-start; flex-wrap: wrap; }
+  .controls-row .secondary-button { flex: 1 1 44%; padding: 11px; font-size: 12px; }
+  .controls-row .danger-text { min-height: 46px; }
+  .dialog { padding: 23px 20px; max-height: 92vh; }
+  .dialog-heading > h2 { font-size: 22px; }
+  .dialog-actions { flex-wrap: wrap; }
+  .receipt-details > div { grid-template-columns: 100px minmax(0, 1fr); gap: 11px; }
+  .payment-timeline small { font-size: 10px; }
+  .alert { font-size: 13px; padding: 13px 15px; }
+  .form-columns { grid-template-columns: 1fr; }
+  .setup-stage { padding: 27px 20px; }
+  .setup-journey { padding: 19px 15px 16px; }
+  .setup-step-list { gap: 5px; }
+  .setup-step-list button { font-size: 10px; line-height: 1.5; gap: 7px; }
+  .step-number { width: 28px; height: 28px; }
+  .setup-stage-heading h2 { font-size: 28px; }
+  .setup-stage-heading p { font-size: 13px; }
+  .setup-actions { align-items: stretch; flex-direction: column-reverse; }
+  .setup-actions > * { width: 100%; }
+  .review-agent { flex-wrap: wrap; }
+  .review-agent > div { flex: 1 1 calc(100% - 55px); }
+  .review-agent .text-button { margin-left: 55px; }
+  .review-permissions { flex-wrap: wrap; gap: 17px; }
+  .review-limits { grid-template-columns: 1fr; gap: 17px; }
+  .review-limits > div { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+  .review-limits dd { margin: 0; font-size: 17px; }
+  .review-limits small { display: inline; margin-left: 5px; }
+  .welcome-content { padding: 29px 23px; }
+  .welcome-content h2 { font-size: 29px; }
+  .welcome-content > p { font-size: 14px; }
+  .welcome-art { min-height: 190px; }
+  .welcome-orbit { right: 14%; }
+  .welcome-orbit-two { left: 13%; }
+  .welcome-content .primary-button { width: 100%; }
+  .treasury-next-actions { gap: 12px; }
+  .treasury-next-actions .secondary-button { font-size: 13px; }
+}
+@media (max-width: 350px) {
+  .topbar-actions { justify-content: flex-start; }
+  .wallet-button { margin-left: auto; }
+  .topbar-actions .signout-button { margin-left: auto; }
+  .service-price { margin-left: 0; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .budget-track > span { transition: none; }
+  .loading-spinner, .setup-fields { animation: none; }
+}

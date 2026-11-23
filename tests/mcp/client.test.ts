@@ -1,0 +1,87 @@
+import { describe, expect, it, vi } from "vitest";
+import { AgentPayClient, AgentPayClientError } from "../../mcp/client";
+const key = "ap_" + "a".repeat(43);
+const recipient = "0x2222222222222222222222222222222222222222";
+const input = { recipient, amount: "4", service: "Research API", purpose: "Purchase relevant research", evidence: "Invoice 123", idempotencyKey: "research-job-001" };
+const fetchOk = () => vi.fn(async (_url: string | URL | Request, _options?: RequestInit) => new Response(JSON.stringify({success:true,data:{id:"0x"+"b".repeat(64),status:"queued"}}), {headers:{"content-type":"application/json"}}));
+
+describe("AgentPay MCP API client", () => {
+  it("scopes bearer authentication to a fixed HTTPS origin and forbids redirects", async () => {
+    const fetcher = fetchOk();
+    const client = new AgentPayClient("https://agentpay.example/", key, {fetch: fetcher});
+    await client.treasury();
+    expect(fetcher).toHaveBeenCalledWith("https://agentpay.example/api/v1/treasury", expect.objectContaining({redirect:"error",headers:expect.objectContaining({Authorization:`Bearer ${key}`})}));
+  });
+  it.each(["https://user:pass@agentpay.example", "https://agentpay.example/?key=secret", "https://agentpay.example/path", "http://agentpay.example", "file:///etc/passwd"])("rejects unsafe base configuration %s", (url) => {
+    expect(() => new AgentPayClient(url,key)).toThrow(AgentPayClientError);
+  });
+  it("allows explicit local HTTP for development", () => {
+    expect(() => new AgentPayClient("http://127.0.0.1:3000",key)).not.toThrow();
+  });
+  it("requires an agent-scoped API credential", () => {
+    expect(() => new AgentPayClient("https://agentpay.example","private-key")).toThrow(AgentPayClientError);
+  });
+  it("preserves idempotency fields and exact decimal amounts when submitting", async () => {
+    const fetcher=fetchOk(); const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
+    await client.requestPayment({...input,amount:"0.000001"});
+    const opts=fetcher.mock.calls[0]?.[1] as RequestInit;
+    expect(opts.method).toBe("POST");
+    expect(JSON.parse(String(opts.body))).toEqual({...input,amount:"0.000001"});
+  });
+  it("validates fields before touching the network", async () => {
+    const fetcher=fetchOk(); const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
+    await expect(client.requestPayment({...input,amount:"-1"})).rejects.toThrow(AgentPayClientError);
+    await expect(client.requestPayment({...input,amount:"0"})).rejects.toThrow(AgentPayClientError);
+    await expect(client.requestPayment({...input,token:"anything"})).rejects.toThrow(AgentPayClientError);
+    await expect(client.payment("../../secret")).rejects.toThrow(AgentPayClientError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("does not leak credentials or response details in errors", async () => {
+    const fetcher=vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response(JSON.stringify({success:false,error:{code:"UNAUTHORIZED",message:key}}),{status:401}));
+    const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
+    await expect(client.policy()).rejects.toThrow("Agent credential is invalid, expired, or revoked.");
+    const network=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async()=>{throw new Error(key);})});
+    await expect(network.policy()).rejects.toThrow("AgentPay could not be reached. Retrieve payment status before retrying a submission.");
+  });
+  it("limits history without adding unsupported pagination parameters", async () => {
+    const fetcher=vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response(JSON.stringify({success:true,data:[{id:"a"},{id:"b"}]})));
+    const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
+    expect(await client.history(1)).toEqual([{id:"a"}]);
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://agentpay.example/api/v1/payments");
+  });
+  it("rejects malformed and excessive upstream responses", async () => {
+    const client=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response("not JSON"))});
+    await expect(client.treasury()).rejects.toThrow("AgentPay returned an invalid response.");
+    const large=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response("x".repeat(1_500_001)))});
+    await expect(large.treasury()).rejects.toThrow("AgentPay response exceeds the local size limit.");
+  });
+  it("rejects invalid history limits and unexpected upstream history shapes", async () => {
+    const fetcher=fetchOk(); const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
+    await expect(client.history(0)).rejects.toThrow("History limit");
+    await expect(client.history(101)).rejects.toThrow("History limit");
+    await expect(client.history(1)).rejects.toThrow("AgentPay returned an invalid response.");
+  });
+  it("rejects unexpected successful response envelopes", async () => {
+    for(const payload of [null, {}, {success:false}, {success:true}]) {
+      const client=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async()=>new Response(JSON.stringify(payload)))});
+      await expect(client.treasury()).rejects.toThrow("AgentPay returned an invalid response.");
+    }
+  });
+  it("bounds upstream error codes and uses safe messages for errors", async () => {
+    for(const status of [400,403,404,409,429,503]) {
+      const client=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async()=>new Response(JSON.stringify({success:false,error:{code:key,message:key}}),{status}))});
+      try { await client.treasury(); throw new Error("Expected failure"); }
+      catch(error) { expect(error).toBeInstanceOf(AgentPayClientError); expect((error as AgentPayClientError).code).toBe("REQUEST_FAILED"); expect((error as Error).message).not.toContain(key); }
+    }
+  });
+  it("retrieves a valid request by its request ID", async () => {
+    const fetcher=fetchOk(); const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
+    const id="0x"+"b".repeat(64); await client.payment(id);
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://agentpay.example/api/v1/payments/"+id);
+  });
+  it("bounds local call frequency", async () => {
+    const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetchOk(),now:()=>1000});
+    for(let i=0;i<60;i++) await client.treasury();
+    await expect(client.treasury()).rejects.toThrow("Too many local tool calls. Wait a minute before retrying.");
+  });
+});

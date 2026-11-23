@@ -1,0 +1,31 @@
+name: Verify AgentPay
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - run: npm run check:secrets
+      - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run test:contracts
+      - run: node tools/contracts.mjs coverage
+      - run: python3 -m venv .venv
+      - run: .venv/bin/pip install -r requirements.txt
+      - run: npm run check:genlayer
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

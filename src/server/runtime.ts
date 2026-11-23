@@ -1,0 +1,68 @@
+import { resolve } from "node:path";
+import { AgentPayService } from "../core/service";
+import { emptyState, type Mode } from "../core/types";
+import type { AtomicStore } from "../core/ports";
+import { AppError } from "../core/errors";
+import { FileStore } from "./file-store";
+import { MongoStore } from "./mongo-store";
+import { demoState, demoPorts } from "./demo";
+import { OwnerAuth } from "./auth";
+export interface Runtime {
+  mode: Mode;
+  store: AtomicStore;
+  service: AgentPayService;
+  auth: OwnerAuth;
+}
+let runtime: Promise<Runtime> | undefined;
+async function createRuntime(): Promise<Runtime> {
+  const configured = process.env.AGENTPAY_MODE ?? "live";
+  if (configured !== "demo" && configured !== "live")
+    throw new AppError(
+      "CONFIGURATION_REQUIRED",
+      "AGENTPAY_MODE must be demo or live.",
+      503,
+    );
+  const mode: Mode = configured;
+  const initial = mode === "demo" ? demoState : emptyState;
+  let store: AtomicStore;
+  if (process.env.MONGODB_URI) {
+    store = new MongoStore(
+      process.env.MONGODB_URI,
+      process.env.AGENTPAY_DATABASE ??
+        (mode === "live" ? "agentpay" : "agentpay_demo"),
+      initial,
+      mode,
+    );
+  } else {
+    if (mode === "live" || process.env.VERCEL)
+      throw new AppError(
+        "CONFIGURATION_REQUIRED",
+        "MongoDB Atlas is required for durable hosted operation.",
+        503,
+      );
+    store = new FileStore(
+      resolve(
+        /* turbopackIgnore: true */ process.env.AGENTPAY_DEMO_STATE ??
+          ".local/demo-state.json",
+      ),
+      initial,
+    );
+  }
+  const ports =
+    mode === "demo"
+      ? demoPorts()
+      : (await import("../integrations/live")).createLivePorts();
+  return {
+    mode,
+    store,
+    service: new AgentPayService(store, ports, mode),
+    auth: new OwnerAuth(store),
+  };
+}
+export function getRuntime() {
+  runtime ??= createRuntime().catch((error) => {
+    runtime = undefined;
+    throw error;
+  });
+  return runtime;
+}

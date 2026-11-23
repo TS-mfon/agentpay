@@ -1,0 +1,29 @@
+@import "../components/styles/base.css";
+@import "../components/styles/panels.css";
+@import "../components/styles/dialogs.css";
+@import "../components/styles/responsive.css";
+@font-face { font-family:Inter; font-style:normal; font-weight:100 900; font-display:swap; src:url('/fonts/inter-latin.woff2') format('woff2'); }
+:root { --ink:#1F2430; --muted:#6C6671; --navy:#1F2430; --blue:#3D4B62; --blue-deep:#2E3546; --paper:#F1ECEA; --surface:#FFFCFA; --line:#DED6D8; --soft:#E8E2E5; --success:#23634F; --danger:#A73535; --radius:16px; --font:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; }
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; scroll-padding-top:96px; }
+body { margin:0; color:var(--ink); background:var(--paper); font-family:var(--font); font-size:15px; font-weight:500; -webkit-font-smoothing:antialiased; }
+button,input,textarea,select { font:inherit; }
+button,a,input,textarea,select { outline-offset:4px; }
+:focus-visible { outline:3px solid #536781; }
+button { cursor:pointer; border:0; }
+button:disabled { cursor:not-allowed; opacity:.55; }
+a { color:inherit; }
+button svg,a svg { flex-shrink:0; }
+h1,h2,h3,p { margin:0; }
+h1 { font-size:clamp(30px,3vw,44px); line-height:1.15; letter-spacing:-1.5px; font-weight:550; }
+h2 { font-size:22px; line-height:1.4; letter-spacing:-.55px; font-weight:550; }
+h3 { font-size:17px; line-height:1.5; font-weight:550; }
+small { font-size:13px; font-weight:400; }
+input,textarea,select { border:1px solid #CFC6CB; border-radius:10px; background:#FFFCFA; color:var(--ink); width:100%; padding:12px 14px; line-height:1.5; }
+textarea { resize:vertical; }
+input:hover,textarea:hover,select:hover { border-color:#938B90; }
+@media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
+
+::selection { background:#B0AEC6; color:#1F2430; }
+input,textarea { caret-color:#3D4B62; }
+a { text-underline-offset:4px; }

@@ -1,0 +1,13 @@
+.git
+.env*
+!.env.example
+.local
+.unlazy
+.venv
+coverage
+contracts/out
+contracts/cache
+contracts/coverage-out
+contracts/coverage-cache
+playwright-report
+test-results
