@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   getAddress,
+  isAddress,
   keccak256,
   stringToHex,
   parseUnits,
@@ -11,6 +12,7 @@ import type { PaymentInput } from "./types";
 const address = z
   .string()
   .regex(/^0x[0-9a-fA-F]{40}$/)
+  .refine((value) => isAddress(value, { strict: true }) && !/^0x0{40}$/i.test(value), "Address checksum is invalid or address is zero")
   .transform((s) => getAddress(s));
 const amount = z
   .string()

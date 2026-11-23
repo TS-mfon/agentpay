@@ -1,6 +1,13 @@
 name: AgentPay executor
 on:
   workflow_dispatch:
+    inputs:
+      batch:
+        description: Maximum state-processing operations for a manual test or recovery run
+        required: false
+        default: "4"
+        type: choice
+        options: ["4", "10", "20"]
   schedule:
     - cron: '2-59/5 * * * *'
 permissions:
@@ -25,7 +32,7 @@ jobs:
         run: npm run worker
         env:
           AGENTPAY_MODE: live
-          AGENTPAY_WORKER_BATCH: '4'
+          AGENTPAY_WORKER_BATCH: ${{ inputs.batch || '4' }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           AGENTPAY_DATABASE: ${{ vars.AGENTPAY_DATABASE }}
           AEVUM_RPC_URL: https://rpc-test.qday.info

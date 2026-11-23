@@ -12,6 +12,7 @@
 .sidebar a:hover, .sidebar a:focus-visible { color: var(--docs-ink); background: #1f243009; }
 .navGroup { margin-top: 26px; }
 .mobileNav { display: none; }
+.mobileTableHint { display: none; }
 .content { min-width: 0; }
 .intro { margin-bottom: 58px; }
 .intro h1 { font-size: clamp(38px, 5vw, 66px); line-height: 1.07; letter-spacing: -.065em; font-weight: 540; margin: 0 0 22px; }
@@ -51,3 +52,8 @@
 @media(max-width:1000px) { .layout { gap: 38px; grid-template-columns: 180px minmax(0,1fr); padding-inline: 28px; } }
 @media(max-width:760px) { .header { height: 76px; padding-inline: 20px; }.brand { font-size: 20px; }.headerLinks { gap: 16px; }.headerLinks > a:first-child { display: none; }.launch { padding-inline: 14px; }.layout { display: block; padding: 30px 20px 70px; }.sidebar { display: none; }.mobileNav { display: block; margin-bottom: 36px; padding: 14px 16px; border: 1px solid #1f243020; border-radius: 12px; }.mobileNav summary { cursor: pointer; font-weight: 550; }.mobileNav a { display: block; padding: 9px 0; color: var(--docs-muted); }.intro { margin-bottom: 38px; }.intro p { font-size: 17px; }.section { margin-top: 52px; }.section h2 { font-size: 27px; }.tableWrap th,.tableWrap td { padding: 11px; }.codeBlock pre { padding: 18px; }.callout { padding: 18px; } }
 @media(prefers-reduced-motion:reduce) { .page * { scroll-behavior: auto; } }
+
+@media(max-width:760px) {
+  .tableWrap table { min-width: 540px; }
+  .mobileTableHint { display: block; margin-bottom: 20px; font-size: 13px; line-height: 1.6; color: var(--docs-muted); }
+}

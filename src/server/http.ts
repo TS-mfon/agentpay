@@ -1,3 +1,4 @@
+import { isAddress, getAddress } from "viem";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { AppError } from "../core/errors";
@@ -117,4 +118,13 @@ export async function body(request: Request) {
   } catch {
     throw new AppError("INVALID_JSON", "Request body must be valid JSON.");
   }
+}
+
+export function selectedTreasury(request: Request): string | undefined {
+  const parameters = new URL(request.url).searchParams;
+  const supplied = parameters.getAll("treasuryId");
+  if (!supplied.length) return undefined;
+  if (supplied.length !== 1 || !isAddress(supplied[0], { strict: true }))
+    throw new AppError("INVALID_TREASURY", "Choose a valid agent treasury address.", 400);
+  return getAddress(supplied[0]);
 }

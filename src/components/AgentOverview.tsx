@@ -1,0 +1,23 @@
+"use client";
+import { useState } from "react";
+import Link from "next/link";
+import Icon from "./Icon";
+import MandatePanel from "./MandatePanel";
+import TreasuryControls from "./TreasuryControls";
+import { budgetPercent, formatMoney, remainingBudget } from "./view-model";
+import { spendableBalance } from "./workspace-model";
+import type { DashboardData, OwnerAction, Policy } from "./types";
+export default function AgentOverview({data,busy,onControl,onRefresh,onSave}:{data:DashboardData;busy:boolean;onControl:(action:OwnerAction,amount?:string)=>Promise<void>;onRefresh:()=>Promise<void>;onSave:(policy:Omit<Policy,"version"|"mandateHash">)=>Promise<void>}){
+ const [editRequest,setEditRequest]=useState(0);
+ const t=data.treasury,p=data.policy,query=`?treasuryId=${encodeURIComponent(t.id)}`;
+ const progress=budgetPercent(t.weeklySpent,p.weeklyBudget);
+ return <><Link className="text-button agent-back" href="/agents">← All agents</Link><div className="workspace-heading"><div><h1>{t.agentName}</h1><p>Manage this agent's financial mandate, funds, and access.</p></div><span className={`status ${t.active && !t.paused?"status-approved":"status-expired"}`}>{t.paused?"Treasury paused":t.active?"Authorized agent":"Authority revoked"}</span></div>
+  <div className="agent-page-actions"><Link className="primary-button" href={`/console${query}`}><Icon name="send" size={18}/>Request a payment</Link><Link className="secondary-button" href={`/history${query}`}><Icon name="clock" size={18}/>View request history</Link></div>
+  <section className="treasury-summary" aria-label="Treasury balances"><div className="balance-summary"><div className="balance-label"><Icon name="wallet" size={19}/>Vault balance</div><strong>{formatMoney(t.balance)} <span>tUSD8</span></strong><span className="summary-note">{formatMoney(spendableBalance(data))} tUSD8 authorized and available for payments.</span></div><div className="budget-summary"><div className="budget-label"><span>Weekly authority remaining</span><span>{formatMoney(t.weeklySpent)} / {formatMoney(p.weeklyBudget)} tUSD8 spent</span></div><strong>{formatMoney(remainingBudget(p.weeklyBudget,t.weeklySpent))} <span>tUSD8</span></strong><div className="budget-track" role="progressbar" aria-label="Weekly budget spent" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{width:`${progress}%`}}/></div><span className="summary-note">Settled spending counts against the budget. Unused funds remain yours.</span></div></section>
+  {t.balance==="0" ? <div className="funding-prompt"><Icon name="wallet" size={22}/><div><strong>Fund this vault to enable payments.</strong><p>Add tUSD8 from your owner wallet using the controls below.</p></div><a className="text-button" href="#controls-title">Add funds</a></div>:null}
+  <MandatePanel policy={p} busy={busy} onSave={onSave} editRequest={editRequest}/>
+  <section className="vault-details panel" aria-labelledby="vault-title"><div className="panel-heading"><div><h2 id="vault-title">Your vault.</h2><p className="section-description">Funds live on Aevum, under your wallet's ownership.</p></div><Icon name="wallet" size={23}/></div><dl><div><dt>Vault address</dt><dd><a href={`https://explorer-test.qday.info/address/${t.id}`} target="_blank" rel="noreferrer">{t.id}<Icon name="external" size={14}/></a></dd></div><div><dt>Owner wallet</dt><dd>{t.owner}</dd></div><div><dt>Payment token</dt><dd>tUSD8 <a href={`https://explorer-test.qday.info/address/${t.token}`} target="_blank" rel="noreferrer">{t.token}<Icon name="external" size={14}/></a></dd></div><div><dt>Authorization expires</dt><dd>{new Date(p.validUntil*1000).toLocaleDateString("en",{year:"numeric",month:"long",day:"numeric"})}</dd></div></dl></section>
+  <TreasuryControls data={data} busy={busy} onControl={onControl} onRefresh={onRefresh} onRenew={()=>setEditRequest(current=>current+1)}/>
+  <div className="agent-integration-note"><Icon name="key" size={21}/><div><h3>Connect this agent to the API.</h3><p>Generate a scoped agent key in owner controls. The credential can request payments from this vault, without its owner's wallet key.</p><Link className="text-button" href="/docs#mcp">Open the integration guide</Link></div></div>
+ </>;
+}

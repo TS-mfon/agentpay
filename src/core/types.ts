@@ -31,6 +31,11 @@ export interface Treasury {
   agentId: string;
   agentName: string;
   balance: string;
+  reservedBalance?: string;
+  availableBalance?: string;
+  availableWeeklyBudget?: string;
+  availableTotalBudget?: string;
+  spendableBalance?: string;
   paused: boolean;
   active: boolean;
   policyVersion: number;

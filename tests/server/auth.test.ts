@@ -97,14 +97,12 @@ describe("owner authentication", () => {
     await expect(auth.owner(undefined)).rejects.toBeDefined();
     await auth.logout(undefined);
   });
-  it("invalidates the previous challenge when a fresh nonce is issued", async () => {
+  it("preserves the previous challenge when a fresh nonce is issued", async () => {
     const auth = new OwnerAuth(new MemoryStore(emptyState()));
     const first = await auth.nonce(account.address, "https://agentpay.example");
     await auth.nonce(account.address, "https://agentpay.example");
     const signature = await account.signMessage({ message: first.message });
-    await expect(
-      auth.verify({ address: account.address, nonce: first.nonce, signature }),
-    ).rejects.toMatchObject({ code: "NONCE_EXPIRED" });
+    expect((await auth.verify({ address: account.address, nonce: first.nonce, signature })).owner).toBe(account.address);
   });
 });
 describe("persistent abuse controls", () => {

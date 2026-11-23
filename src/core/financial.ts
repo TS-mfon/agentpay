@@ -1,6 +1,6 @@
 import type { State, Treasury, Policy } from "./types";
 import { AppError } from "./errors";
-import { units, sameAddress } from "./validation";
+import { units, decimal, sameAddress } from "./validation";
 export const pendingStatuses = new Set([
   "queued",
   "evaluating",
@@ -47,15 +47,7 @@ export function checkLimits(
       "PAYMENT_LIMIT",
       "Payment exceeds the per-payment limit.",
     );
-  const reserved = s.payments
-    .filter(
-      (r) =>
-        r.id !== excludeId &&
-        r.treasuryId === t.id &&
-        pendingStatuses.has(r.status) &&
-        Date.parse(r.expiresAt) > timestamp,
-    )
-    .reduce((total, r) => total + BigInt(r.amountUnits), 0n);
+  const reserved = reservedUnits(s, t.id, timestamp, excludeId);
   const spent =
     t.week === Math.floor(timestamp / 604800000) ? units(t.weeklySpent) : 0n;
   if (value + reserved + spent > units(p.weeklyBudget))
@@ -73,4 +65,22 @@ export function checkLimits(
       "INSUFFICIENT_BALANCE",
       "Treasury has insufficient available funds.",
     );
+}
+
+export function reservedUnits(s: State, treasuryId: string, timestamp: number, excludeId?: string): bigint {
+  return s.payments.filter((r) => r.id !== excludeId && sameAddress(r.treasuryId, treasuryId) &&
+    pendingStatuses.has(r.status) && (r.status === "executing" || Date.parse(r.expiresAt) > timestamp))
+    .reduce((total, r) => total + BigInt(r.amountUnits), 0n);
+}
+export function spendingAvailability(s: State, t: Treasury, p: Policy, timestamp: number) {
+  const reserved = reservedUnits(s, t.id, timestamp);
+  const nonNegative = (amount: bigint) => amount > 0n ? amount : 0n;
+  const available = nonNegative(units(t.balance) - reserved);
+  const spentThisWeek = t.week === Math.floor(timestamp / 604800000) ? units(t.weeklySpent) : 0n;
+  const weekly = nonNegative(units(p.weeklyBudget) - spentThisWeek - reserved);
+  const total = nonNegative(units(p.totalBudget) - units(t.totalSpent) - reserved);
+  const spendable = !t.active || t.paused || p.validUntil * 1000 <= timestamp ? 0n :
+    [available, weekly, total].reduce((minimum, value) => value < minimum ? value : minimum);
+  return { reservedBalance: decimal(reserved), availableBalance: decimal(available),
+    availableWeeklyBudget: decimal(weekly), availableTotalBudget: decimal(total), spendableBalance: decimal(spendable) };
 }

@@ -85,3 +85,41 @@ describe("AgentPay MCP API client", () => {
     await expect(client.treasury()).rejects.toThrow("Too many local tool calls. Wait a minute before retrying.");
   });
 });
+
+describe("MCP actionable spending errors", () => {
+  it.each([
+    ["RECIPIENT_NOT_ALLOWED", "approved recipient"],
+    ["INSUFFICIENT_BALANCE", "pending commitments"],
+    ["PAYMENT_LIMIT", "per-payment"],
+    ["WEEKLY_BUDGET", "weekly"],
+    ["TOTAL_BUDGET", "lifetime"],
+    ["IDEMPOTENCY_CONFLICT", "exact original payload"],
+  ])("explains %s without forwarding an upstream secret", async (code, explanation) => {
+    const client = new AgentPayClient("https://agentpay.example", key, {fetch: vi.fn(async () => new Response(JSON.stringify({success: false, error: {code, message: key}}), {status: code === "IDEMPOTENCY_CONFLICT" ? 409 : 400}))});
+    try { await client.requestPayment(input); throw new Error("Expected rejection"); }
+    catch (error) {
+      expect(error).toBeInstanceOf(AgentPayClientError);
+      expect((error as AgentPayClientError).code).toBe(code);
+      expect((error as Error).message).toContain(explanation);
+      expect((error as Error).message).not.toContain(key);
+    }
+  });
+});
+
+describe("MCP transport diagnostics", () => {
+  it("distinguishes the bounded request timeout without leaking failure details", async () => {
+    const client = new AgentPayClient("https://agentpay.example", key, {fetch: vi.fn(async () => { throw new DOMException(key, "TimeoutError"); })});
+    try { await client.requestPayment(input); throw new Error("Expected timeout"); }
+    catch (error) {
+      expect(error).toBeInstanceOf(AgentPayClientError);
+      expect((error as AgentPayClientError).code).toBe("REQUEST_TIMEOUT");
+      expect((error as Error).message).toContain("15-second");
+      expect((error as Error).message).not.toContain(key);
+    }
+  });
+  it("retains the actual HTTP status for safe actionable API errors", async () => {
+    const client = new AgentPayClient("https://agentpay.example", key, {fetch: vi.fn(async () => new Response(JSON.stringify({success: false, error: {code: "RECIPIENT_NOT_ALLOWED"}}), {status: 403}))});
+    try { await client.requestPayment(input); throw new Error("Expected rejection"); }
+    catch (error) { expect((error as AgentPayClientError & {httpStatus?: number}).httpStatus).toBe(403); }
+  });
+});

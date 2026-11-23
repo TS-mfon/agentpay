@@ -1,14 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function showUnconfiguredTreasury(page: Page) {
-  await page.route("**/api/owner/dashboard", (route) => route.fulfill({
+  await page.route("**/api/owner/agents", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({ success: true, data: {
       mode: "live", owner: "0x2222222222222222222222222222222222222222",
-      treasury: null, policy: null, services: [], payments: [],
+      agents: [],
     } }),
   }));
-  await page.goto("/workspace");
+  await page.goto("/setup");
   await expect(page.getByRole("heading", { name: "Meet your agent." })).toBeVisible({ timeout: 20000 });
 }
 
@@ -21,11 +21,11 @@ async function reachPermissions(page: Page) {
 }
 
 test("live wallet welcome has real onboarding and an actionable missing-wallet error", async ({ page }) => {
-  await page.route("**/api/owner/dashboard", (route) => route.fulfill({
+  await page.route("**/api/owner/agents", (route) => route.fulfill({
     status: 401, contentType: "application/json",
     body: JSON.stringify({ success: false, error: { code: "UNAUTHORIZED", message: "Connect your owner wallet." } }),
   }));
-  await page.goto("/workspace");
+  await page.goto("/setup");
   await expect(page.getByRole("heading", { name: "Start with your wallet." })).toBeVisible({ timeout: 20000 });
   await expect(page.getByText("Demo · simulated", { exact: true })).not.toBeVisible();
   await page.locator(".welcome-content").getByRole("button", { name: "Connect wallet", exact: true }).click();

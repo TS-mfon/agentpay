@@ -1,6 +1,7 @@
+import { isAddress } from "viem";
 import { TUSD8_ADDRESS } from "./types";
 import { PaymentProcessor } from "./processor";
-import { checkLimits } from "./financial";
+import { checkLimits, spendingAvailability } from "./financial";
 import { randomBytes, createHash } from "node:crypto";
 import type { AtomicStore, Ports, VaultSnapshot } from "./ports";
 import type {
@@ -31,8 +32,16 @@ const pending = new Set([
 ]);
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
-const ownerTreasury = (s: State, owner: string) =>
-  s.treasuries.find((t) => sameAddress(t.owner, owner));
+const ownerTreasury = (s: State, owner: string, treasuryId?: string) => {
+  const owned = s.treasuries.filter((t) => sameAddress(t.owner, owner));
+  if (treasuryId) {
+    const selected = owned.find((t) => sameAddress(t.id, treasuryId));
+    if (!selected) throw new AppError("TREASURY_NOT_FOUND", "This treasury was not found for your wallet.", 404);
+    return selected;
+  }
+  if (owned.length > 1) throw new AppError("TREASURY_SELECTION_REQUIRED", "Choose an agent treasury before continuing.", 409);
+  return owned[0];
+};
 const policyFor = (s: State, t: Treasury) =>
   s.policies.find(
     (p) => sameAddress(p.treasuryId, t.id) && p.version === t.policyVersion,
@@ -49,8 +58,8 @@ export class AgentPayService {
   private now() {
     return this.ports.now?.() ?? Date.now();
   }
-  private treasury(s: State, owner: string) {
-    const t = ownerTreasury(s, owner);
+  private treasury(s: State, owner: string, treasuryId?: string) {
+    const t = ownerTreasury(s, owner, treasuryId);
     if (!t)
       throw new AppError(
         "TREASURY_NOT_FOUND",
@@ -69,9 +78,9 @@ export class AgentPayService {
       );
     return p;
   }
-  async dashboard(owner: string): Promise<Dashboard> {
+  async dashboard(owner: string, treasuryId?: string): Promise<Dashboard> {
     let s = await this.store.read();
-    const stored = ownerTreasury(s, owner);
+    const stored = ownerTreasury(s, owner, treasuryId);
     if (this.mode === "live" && stored) {
       const prior = this.activePolicy(s, stored);
       const snapshot = await this.ports.settlement.snapshot(
@@ -82,7 +91,8 @@ export class AgentPayService {
       s = await this.store.update((current) => ({
         ...current,
         treasuries: current.treasuries.map((t) =>
-          t.id === stored.id
+          t.id === stored.id && t.policyVersion === stored.policyVersion &&
+          t.keyVersion === stored.keyVersion && t.paused === stored.paused && t.active === stored.active
             ? {
                 ...t,
                 ...snapshot,
@@ -95,7 +105,11 @@ export class AgentPayService {
         ),
       }));
     }
-    const treasury = ownerTreasury(s, owner) ?? null;
+    const currentTreasury = ownerTreasury(s, owner, treasuryId) ?? null;
+    const currentPolicy = currentTreasury ? policyFor(s, currentTreasury) : null;
+    const treasury = currentTreasury && currentPolicy ? {
+      ...currentTreasury, ...spendingAvailability(s, currentTreasury, currentPolicy, this.now()),
+    } : currentTreasury;
     return {
       mode: this.mode,
       owner,
@@ -110,9 +124,33 @@ export class AgentPayService {
       services: this.ports.services ?? [],
     };
   }
-  async getPayment(owner: string, id: string) {
+  async listAgents(owner: string) {
+    const owned = (await this.store.read()).treasuries.filter((t) => sameAddress(t.owner, owner));
+    const outcomes = await Promise.allSettled(owned.map((t) => this.dashboard(owner, t.id)));
+    const agents = outcomes.flatMap((outcome) => {
+      if (outcome.status !== "fulfilled") return [];
+      const { treasury, policy } = outcome.value;
+      return treasury ? [{
+        ...treasury,
+        ...(policy ? { perPaymentLimit: policy.perPaymentLimit, weeklyBudget: policy.weeklyBudget,
+          totalBudget: policy.totalBudget, validUntil: policy.validUntil, mandateHash: policy.mandateHash,
+          recipients: policy.recipients } : {}),
+      }] : [];
+    });
+    const unavailable = outcomes.flatMap((outcome, index) => {
+      if (outcome.status !== "rejected") return [];
+      const treasury = owned[index];
+      const ownershipMismatch = outcome.reason instanceof AppError && outcome.reason.code === "VAULT_MISMATCH";
+      return [{ id: treasury.id, agentId: treasury.agentId, agentName: treasury.agentName,
+        code: ownershipMismatch ? "VAULT_MISMATCH" : "VAULT_UNAVAILABLE",
+        message: ownershipMismatch ? "This vault no longer matches your wallet or the configured payment token. Its controls are unavailable."
+          : "This vault could not be refreshed. Try again shortly." }];
+    });
+    return { mode: this.mode, owner, agents, unavailable };
+  }
+  async getPayment(owner: string, id: string, treasuryId?: string) {
     const s = await this.store.read();
-    const t = this.treasury(s, owner);
+    const t = this.treasury(s, owner, treasuryId);
     const p = s.payments.find(
       (p) => p.id === id && sameAddress(p.treasuryId, t.id),
     );
@@ -134,7 +172,7 @@ export class AgentPayService {
     const policy = parsePolicy(policyFields(raw));
     if (
       typeof treasuryId !== "string" ||
-      !/^0x[0-9a-fA-F]{40}$/.test(treasuryId)
+      (!isAddress(treasuryId, { strict: true }) || /^0x0{40}$/i.test(treasuryId))
     )
       throw new AppError(
         "INVALID_TREASURY",
@@ -206,13 +244,10 @@ export class AgentPayService {
       };
     }
     await this.store.update((s) => {
-      if (
-        ownerTreasury(s, owner) ||
-        s.treasuries.some((t) => sameAddress(t.id, treasuryId))
-      )
+      if (s.treasuries.some((t) => sameAddress(t.id, treasuryId)))
         throw new AppError(
           "TREASURY_EXISTS",
-          "This owner or vault already has a registered treasury.",
+          "This vault already has a registered agent treasury.",
           409,
         );
       return {
@@ -230,7 +265,7 @@ export class AgentPayService {
         ],
       };
     });
-    return this.dashboard(owner);
+    return this.dashboard(owner, treasuryId);
   }
   private assertSnapshotOwner(snapshot: VaultSnapshot, owner: string) {
     if (
@@ -275,22 +310,34 @@ export class AgentPayService {
         409,
       );
   }
-  async requestPayment(owner: string, input: unknown) {
+  async requestPayment(owner: string, input: unknown, treasuryId?: string, authority?: { agentId: string; keyVersion: number }) {
     const parsed = parsePayment(input);
     const timestamp = this.now();
     let result: Payment | undefined;
     const base = await this.store.read();
-    const existingTreasury = this.treasury(base, owner);
+    const existingTreasury = this.treasury(base, owner, treasuryId);
+    const existingPolicy = this.activePolicy(base, existingTreasury);
     const snapshot =
       this.mode === "live"
         ? await this.ports.settlement.snapshot(
             existingTreasury,
-            this.activePolicy(base, existingTreasury).recipients,
+            existingPolicy.recipients,
           )
         : null;
     if (snapshot) this.assertSnapshotOwner(snapshot, owner);
     await this.store.update((s) => {
-      const current = this.treasury(s, owner);
+      const current = this.treasury(s, owner, treasuryId);
+      if (authority && (current.agentId !== authority.agentId || current.keyVersion !== authority.keyVersion || !current.active))
+        throw new AppError("UNAUTHORIZED", "Agent credential was revoked or rotated before this request was recorded.", 401);
+      if (current.policyVersion !== existingTreasury.policyVersion ||
+          current.keyVersion !== existingTreasury.keyVersion || current.paused !== existingTreasury.paused ||
+          current.active !== existingTreasury.active)
+        throw new AppError("POLICY_CHANGED", "Spending authority changed while validating this request. Refresh the mandate and retry.", 409);
+      if (snapshot) {
+        if (snapshot.policyVersion !== current.policyVersion)
+          throw new AppError("POLICY_CHANGED", "The vault mandate changed. Register the new policy before requesting payment.", 409);
+        this.assertSnapshotPolicy(snapshot, existingPolicy);
+      }
       const t = snapshot
         ? {
             ...current,
@@ -354,9 +401,9 @@ export class AgentPayService {
     });
     return safePayment(result!);
   }
-  async issueCredential(owner: string) {
+  async issueCredential(owner: string, treasuryId?: string) {
     const state = await this.store.read();
-    const treasury = this.treasury(state, owner);
+    const treasury = this.treasury(state, owner, treasuryId);
     if (this.mode === "live") {
       const snapshot = await this.ports.settlement.snapshot(
         treasury,
@@ -375,7 +422,7 @@ export class AgentPayService {
       | { key: string; agentId: string; treasuryId: string; keyVersion: number }
       | undefined;
     await this.store.update((s) => {
-      const t = this.treasury(s, owner);
+      const t = this.treasury(s, owner, treasuryId);
       if (!t.active)
         throw new AppError(
           "AGENT_REVOKED",
@@ -445,14 +492,20 @@ export class AgentPayService {
           401,
         );
     }
-    return { owner: t.owner, treasuryId: t.id, agentId: t.agentId };
+    const fresh = await this.store.read();
+    const current = fresh.treasuries.find((treasury) => treasury.id === t.id);
+    if (!current || !current.active || current.keyVersion !== credential.keyVersion ||
+        current.agentId !== credential.agentId || !sameAddress(current.owner, t.owner) ||
+        !fresh.credentials.some((c) => c.digest === credential.digest && c.expiresAt > this.now()))
+      throw new AppError("UNAUTHORIZED", "Agent credential was revoked or rotated during authorization.", 401);
+    return { owner: current.owner, treasuryId: current.id, agentId: current.agentId, keyVersion: current.keyVersion };
   }
-  async updatePolicy(owner: string, input: unknown) {
+  async updatePolicy(owner: string, input: unknown, treasuryId?: string) {
     const next = parsePolicy(policyFields(input));
     if (next.validUntil * 1000 <= this.now())
       throw new AppError("POLICY_EXPIRED", "Choose a future mandate expiry.");
     const state = await this.store.read();
-    const old = this.treasury(state, owner);
+    const old = this.treasury(state, owner, treasuryId);
     const snapshot =
       this.mode === "live"
         ? await this.ports.settlement.snapshot(old, next.recipients)
@@ -472,7 +525,7 @@ export class AgentPayService {
         409,
       );
     await this.store.update((s) => {
-      const t = this.treasury(s, owner);
+      const t = this.treasury(s, owner, treasuryId);
       if (t.policyVersion !== old.policyVersion)
         throw new AppError(
           "POLICY_CONFLICT",
@@ -512,9 +565,9 @@ export class AgentPayService {
         ),
       };
     });
-    return this.dashboard(owner);
+    return this.dashboard(owner, treasuryId);
   }
-  async control(owner: string, input: unknown) {
+  async control(owner: string, input: unknown, treasuryId?: string) {
     if (!input || typeof input !== "object")
       throw new AppError("INVALID_REQUEST", "An owner action is required.");
     const { action, amount } = input as Record<string, unknown>;
@@ -535,7 +588,7 @@ export class AgentPayService {
       value = units(amount);
     }
     const base = await this.store.read();
-    const old = this.treasury(base, owner);
+    const old = this.treasury(base, owner, treasuryId);
     const snapshot =
       this.mode === "live"
         ? await this.ports.settlement.snapshot(
@@ -544,8 +597,11 @@ export class AgentPayService {
           )
         : null;
     await this.store.update((s) => {
-      const t = this.treasury(s, owner);
+      const t = this.treasury(s, owner, treasuryId);
       const oldPolicy = this.activePolicy(s, t);
+      if (t.policyVersion !== old.policyVersion || t.keyVersion !== old.keyVersion ||
+          t.paused !== old.paused || t.active !== old.active)
+        throw new AppError("POLICY_CONFLICT", "Spending authority changed while confirming this control. Refresh and retry.", 409);
       let updated = { ...t };
       if (snapshot) {
         if (!sameAddress(snapshot.owner, owner))
@@ -638,7 +694,7 @@ export class AgentPayService {
           : s.payments,
       };
     });
-    return this.dashboard(owner);
+    return this.dashboard(owner, treasuryId);
   }
   async processBatch(limit = 5) {
     return new PaymentProcessor(this.store, this.ports, this.mode).processBatch(

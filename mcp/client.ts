@@ -1,7 +1,7 @@
 import { paymentSchema } from "../src/core/validation";
 
 export class AgentPayClientError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(public readonly code: string, message: string, public readonly httpStatus?: number) {
     super(message);
     this.name = "AgentPayClientError";
   }
@@ -9,6 +9,11 @@ export class AgentPayClientError extends Error {
 interface ClientOptions { fetch?: typeof globalThis.fetch; now?: () => number }
 const MAX_RESPONSE_BYTES = 1_500_000;
 const REQUEST_ID = /^0x[0-9a-fA-F]{64}$/;
+
+function isTimeout(error: unknown) {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+const timeoutError = () => new AgentPayClientError("REQUEST_TIMEOUT", "AgentPay exceeded the 15-second request deadline. Retrieve the original request status or retry only its exact saved payload/key; a timeout does not establish failed payment.");
 
 function validateOrigin(value: string): string {
   let url: URL;
@@ -40,12 +45,27 @@ async function boundedJson(response: Response): Promise<unknown> {
     return JSON.parse(text) as unknown;
   } catch (error) {
     if (error instanceof AgentPayClientError) throw error;
+    if (isTimeout(error)) throw timeoutError();
     throw new AgentPayClientError("INVALID_RESPONSE", "AgentPay returned an invalid response.");
   } finally { reader.releaseLock(); }
 }
 function failure(response: Response, payload: unknown): AgentPayClientError {
   const candidate = payload && typeof payload === "object" && "error" in payload ? (payload as {error?: {code?: unknown}}).error?.code : undefined;
   const code = typeof candidate === "string" && /^[A-Z_]{2,60}$/.test(candidate) ? candidate : "REQUEST_FAILED";
+  const byCode: Record<string, string> = {
+    RECIPIENT_NOT_ALLOWED: "This recipient is not an approved recipient for this agent. Read the current policy recipients and ask the owner to confirm the intended payee before retrying.",
+    INSUFFICIENT_BALANCE: "The treasury has insufficient available funds after pending commitments. Retrieve availableBalance and spendableBalance; the owner must fund the vault or existing requests must finish.",
+    PAYMENT_LIMIT: "The amount exceeds this agent's per-payment limit. Read the policy; do not split a purchase to evade its limits.",
+    WEEKLY_BUDGET: "The request exceeds remaining weekly authority after pending commitments. Read the current policy and spending state.",
+    TOTAL_BUDGET: "The request exceeds remaining lifetime authority after pending commitments. Ask the owner to review the mandate.",
+    IDEMPOTENCY_CONFLICT: "This key is bound to another request. Retrieve that request and preserve its exact original payload and key; do not create a new key to guess whether it paid.",
+    POLICY_EXPIRED: "The agent mandate has expired. Ask the owner to renew authority before making a new purchase.",
+    TREASURY_PAUSED: "The owner paused this treasury. Do not request or execute new spending until the owner resumes authority.",
+    AGENT_REVOKED: "The owner revoked this agent. A new credential alone cannot restore its spending authority.",
+    POLICY_CHANGED: "The mandate changed while the request was being checked. Read current policy and original request before retrying; do not reuse a key with a different purchase.",
+    REQUEST_CAPACITY: "The bounded request ledger is full. Ask the operator to restore capacity; creating more keys cannot recover a purchase.",
+  };
+  if (byCode[code]) return new AgentPayClientError(code, byCode[code], response.status);
   const messages: Record<number, string> = {
     401: "Agent credential is invalid, expired, or revoked.",
     403: "The agent does not have authority for this action.",
@@ -54,7 +74,7 @@ function failure(response: Response, payload: unknown): AgentPayClientError {
     429: "AgentPay rate limit reached. Wait before retrying.",
     503: "AgentPay is temporarily unavailable. Retrieve payment status before retrying a submission.",
   };
-  return new AgentPayClientError(code, messages[response.status] ?? "AgentPay rejected the request. Check its fields, mandate, limits, approved recipients, and available balance.");
+  return new AgentPayClientError(code, messages[response.status] ?? "AgentPay rejected the request. Check its fields, mandate, limits, approved recipients, and available balance.", response.status);
 }
 export class AgentPayClient {
   private readonly origin: string;
@@ -81,7 +101,8 @@ export class AgentPayClient {
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });
-    } catch {
+    } catch (error) {
+      if (isTimeout(error)) throw timeoutError();
       throw new AgentPayClientError("NETWORK_UNAVAILABLE", "AgentPay could not be reached. Retrieve payment status before retrying a submission.");
     }
     const payload = await boundedJson(response);

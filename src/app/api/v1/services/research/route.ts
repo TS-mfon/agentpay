@@ -13,7 +13,7 @@ export async function GET(request: Request) {
         "Provide the payment request ID for this research purchase.",
       );
     }
-    const payment = await runtime.service.getPayment(identity.owner, paymentId);
+    const payment = await runtime.service.getPayment(identity.owner, paymentId, identity.treasuryId);
     if (payment.status !== "settled" || payment.service !== "Research API") {
       throw new AppError(
         "PAYMENT_REQUIRED",

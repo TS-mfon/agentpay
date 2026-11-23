@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, errorMessage } from "./api";
 import Icon from "./Icon";
+import type { DashboardData } from "./types";
 import {
   emptySetup, setupSteps, validateSetupStep, buildSetupInput,
   type SetupForm,
@@ -14,7 +15,7 @@ const stepCopy = [
   ["A final look before you create.", "Review your agent's authority. Your wallet confirms every on-chain setup transaction."],
 ] as const;
 
-export default function SetupView({ onCreated }: { onCreated: () => Promise<void> }) {
+export default function SetupView({ onCreated }: { onCreated: (data: DashboardData) => Promise<void> }) {
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -63,8 +64,8 @@ export default function SetupView({ onCreated }: { onCreated: () => Promise<void
       setForm((current) => ({ ...current, treasuryId }));
       setCreateNew(false);
       setProgress("Registering the confirmed treasury and mandate…");
-      await api("/api/owner/setup", { ...input, treasuryId });
-      await onCreated();
+      const created = await api<DashboardData>("/api/owner/setup", { ...input, treasuryId });
+      await onCreated(created);
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {

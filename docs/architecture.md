@@ -2,8 +2,10 @@
 
 ```mermaid
 flowchart LR
-  O[Owner wallet] -->|fund/configure/withdraw| V[Aevum tUSD8 vault]
-  A[Agent API credential] --> API[Vercel API]
+  O[Owner wallet] --> UI[Agents / setup / console / history]
+  UI -->|select owned agent| API[Vercel API]
+  O -->|fund/configure/withdraw| V[Separate Aevum tUSD8 vault per agent]
+  A[Agent API credential] --> API
   API --> DB[Atlas request ledger]
   W[GitHub Actions executor] --> DB
   W --> G[GenLayer mandate adjudication]
@@ -27,3 +29,16 @@ Local demo mode uses an isolated persistent file and clearly labeled semantic/pa
 Aevum configuration: chain 44005, tQDAY native gas, tUSD8 token 0x456569838f1d43009A91ebA4263147Afd7233483 with six decimals, HTTPS RPC https://rpc-test.qday.info, Shanghai EVM. No ERC-4337, 1Shot, bundler, paymaster, bridge or unspecified API version is a dependency.
 
 GenLayer governance deploys to the official Studio development preview (Studio Next browser alias), using the SDK studioDevnet preset, canonical https://studio-dev.genlayer.com/api RPC and chain ID61997. It is hosted development infrastructure with temporary state and possible resets, not a durable production consensus guarantee. Aevum44005 is the actual payment chain. References: https://docs.genlayer.com/developers/networks and https://docs.genlayer.com/developers/intelligent-contracts/deploying/network-configuration.
+
+
+## Owner and agent isolation
+
+An owner can register several distinct agent vaults. `/agents` lists only the authenticated wallet's agents, and the detail page contains that selected vault's controls. Owner APIs accept a `treasuryId` selection and recheck ownership; ambiguous selection is rejected. Agent APIs always use the credential's bound treasury/agent identity, so a query parameter cannot switch the credential to another agent.
+
+Balance reads distinguish raw funds from `reservedBalance`, `availableBalance`, and available financial authority. Pending commitments remain reserved while submitted transactions are unresolved, including after local request expiry. This avoids presenting committed funds as freely spendable.
+
+## Evidence disclosure
+
+The owner's mandate and request service, purpose and evidence are sent in GenLayer transaction arguments. Treat this content as disclosed to governance infrastructure; Aevum hashes do not make it private. Redact private invoice details, names, addresses, children's routes, bank information and credentials. The API does not independently establish a recipient's merchant identity, invoice authenticity or service delivery.
+
+MCP advertises validated output schemas and preserves receipt references, but does not independently fetch Aevum receipts. The backend checks settlement events; hosts can use trusted Aevum explorer/RPC reads for independent verification. Neither API nor MCP publishes a guaranteed worker ETA or worker-health heartbeat.

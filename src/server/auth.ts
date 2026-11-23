@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
-import { getAddress, verifyMessage } from "viem";
+import { getAddress, isAddress, verifyMessage } from "viem";
 import type { AtomicStore } from "../core/ports";
 import { AppError } from "../core/errors";
 import { sameAddress } from "../core/validation";
@@ -13,6 +13,7 @@ export class OwnerAuth {
   async nonce(address: string, origin: string) {
     let owner: string;
     try {
+      if (!isAddress(address, { strict: true })) throw new Error("Invalid address");
       owner = getAddress(address);
     } catch {
       throw new AppError(
@@ -29,15 +30,12 @@ export class OwnerAuth {
       `Nonce: ${nonce}`,
       `Expires: ${new Date(this.now() + 300000).toISOString()}`,
     ].join("\n");
-    await this.store.update((s) => ({
-      ...s,
-      nonces: [
-        ...s.nonces.filter(
-          (n) => n.expiresAt > this.now() && !sameAddress(n.owner, owner),
-        ),
-        { value: nonce, owner, message, expiresAt: this.now() + 300000 },
-      ],
-    }));
+    await this.store.update((s) => {
+      const active = s.nonces.filter((n) => n.expiresAt > this.now());
+      if (active.filter((n) => sameAddress(n.owner, owner)).length >= 5)
+        throw new AppError("NONCE_LIMIT", "This wallet has five active sign-in challenges. Use an existing challenge or wait five minutes.", 429);
+      return { ...s, nonces: [...active, { value: nonce, owner, message, expiresAt: this.now() + 300000 }] };
+    });
     return { nonce, message };
   }
   async verify(input: unknown) {
@@ -54,22 +52,9 @@ export class OwnerAuth {
         "INVALID_SIGNATURE",
         "A valid wallet signature is required.",
       );
-    let proof: import("../core/types").Nonce | undefined;
-    await this.store.update((s) => {
-      proof = s.nonces.find(
-        (n) =>
-          n.value === nonce &&
-          sameAddress(n.owner, address) &&
-          n.expiresAt > this.now(),
-      );
-      if (!proof)
-        throw new AppError(
-          "NONCE_EXPIRED",
-          "The sign-in challenge expired or was already used.",
-          401,
-        );
-      return { ...s, nonces: s.nonces.filter((n) => n.value !== nonce) };
-    });
+    const proof = (await this.store.read()).nonces.find((n) =>
+      n.value === nonce && sameAddress(n.owner, address) && n.expiresAt > this.now());
+    if (!proof) throw new AppError("NONCE_EXPIRED", "The sign-in challenge expired or was already used.", 401);
     let valid = false;
     try {
       valid = await verifyMessage({
@@ -87,17 +72,15 @@ export class OwnerAuth {
         401,
       );
     const token = randomBytes(32).toString("base64url");
-    await this.store.update((s) => ({
-      ...s,
-      sessions: [
+    await this.store.update((s) => {
+      const current = s.nonces.find((n) => n.value === nonce && n.owner === proof.owner &&
+        n.message === proof.message && n.expiresAt > this.now());
+      if (!current) throw new AppError("NONCE_EXPIRED", "The sign-in challenge expired or was already used.", 401);
+      return { ...s, nonces: s.nonces.filter((n) => n.value !== nonce), sessions: [
         ...s.sessions.filter((session) => session.expiresAt > this.now()),
-        {
-          digest: digest(token),
-          owner: proof!.owner,
-          expiresAt: this.now() + 43200000,
-        },
-      ],
-    }));
+        { digest: digest(token), owner: proof.owner, expiresAt: this.now() + 43200000 },
+      ] };
+    });
     return { token, owner: proof!.owner };
   }
   async owner(token: string | undefined) {

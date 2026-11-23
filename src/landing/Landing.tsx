@@ -17,7 +17,7 @@ export default function Landing() {
     <nav className="ap-nav" aria-label="Main navigation">
       <a className="ap-brand" href="/" aria-label="AgentPay home"><BrandMark/><span>AgentPay</span></a>
       <div className="ap-nav-links"><a href="#how-it-works">How it works</a><a href="#your-control">Your control</a><a href="/docs">Documentation</a></div>
-      <a href="/workspace" className="ap-button">Open workspace <Arrow/></a>
+      <a href="/agents" className="ap-button">Open workspace <Arrow/></a>
     </nav>
     <main>
       <section id="story" className="ap-story" aria-label="AgentPay payment infrastructure">
@@ -29,7 +29,7 @@ export default function Landing() {
           </h1>
           <span className="ap-flying-plane" aria-hidden="true"><PixelIcon index={0}/></span>
           <p className="ap-hero-copy">Give your agents a budget.<br/>Let them get to work.</p>
-          <div className="ap-hero-actions"><a href="/workspace" className="ap-button">Set up your agent <Arrow/></a><a className="ap-text-link" href="/docs#quickstart">Read the agent guide</a></div>
+          <div className="ap-hero-actions"><a href="/setup" className="ap-button">Set up your agent <Arrow/></a><a className="ap-text-link" href="/docs#quickstart">Read the agent guide</a></div>
           <span className="ap-scroll-hint">Scroll to follow a payment <span>↓</span></span>
         </header>
         <div className="ap-stage">
@@ -62,7 +62,7 @@ export default function Landing() {
         </div></div>
       </section>
       <section className="ap-start">
-        <div><span className="ap-network"><i/>Built on QDay Aevum Testnet</span><h2>Give your agent<br/>room to work.</h2><p>Create a treasury. Define a mandate. Connect your agent.<br/>You control the funds from the first payment to the last.</p><a className="ap-button ap-button-light" href="/workspace">Set up your agent <Arrow/></a></div>
+        <div><span className="ap-network"><i/>Built on QDay Aevum Testnet</span><h2>Give your agent<br/>room to work.</h2><p>Create a treasury. Define a mandate. Connect your agent.<br/>You control the funds from the first payment to the last.</p><a className="ap-button ap-button-light" href="/setup">Set up your agent <Arrow/></a></div>
         <div className="ap-start-note"><p>Real tUSD8 settlement on Aevum. GenLayer policy evaluation.<br/>A working testnet dapp with owner-controlled funds.</p><a href="/docs#architecture">Understand the controls and trust model <Arrow/></a></div>
       </section>
     </main>

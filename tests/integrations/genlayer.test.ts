@@ -82,7 +82,7 @@ describe("GenLayer authorization boundary", () => {
     mock.success.mockReturnValue(false);
     await expect(
       createGenLayerGovernance().inspect(TX, payment),
-    ).rejects.toThrow("execution error");
+    ).rejects.toMatchObject({ code: "EVALUATION_FAILED" });
   });
   it("requires matching finalized request/version/mandate", async () => {
     mock.getTransaction.mockResolvedValue({ statusName: "FINALIZED" });
@@ -109,16 +109,17 @@ describe("GenLayer authorization boundary", () => {
       ).rejects.toThrow();
     },
   );
-  it("rejects malformed or absent verdicts", async () => {
+  it("returns a missing-record recovery signal instead of approving an absent decision", async () => {
     mock.getTransaction.mockResolvedValue({ statusName: "FINALIZED" });
     mock.readContract.mockResolvedValue("");
-    await expect(
-      createGenLayerGovernance().inspect(TX, payment),
-    ).rejects.toThrow("unavailable");
+    expect(await createGenLayerGovernance().inspect(TX, payment)).toMatchObject({ finalized: true, status: "unavailable", requestHash: payment.requestHash, mandateHash: payment.mandateHash });
+  });
+  it("fails malformed finalized records as terminal evaluation errors", async () => {
+    mock.getTransaction.mockResolvedValue({ statusName: "FINALIZED" });
     mock.readContract.mockResolvedValue('{"status":"approved"}');
     await expect(
       createGenLayerGovernance().inspect(TX, payment),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "EVALUATION_MALFORMED" });
   });
   it("preserves needs-information and rejection without approving", async () => {
     mock.getTransaction.mockResolvedValue({ statusName: "FINALIZED" });

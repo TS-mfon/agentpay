@@ -17,6 +17,11 @@ export interface Treasury {
   executor: string;
   token: string;
   balance: string;
+  availableBalance?: string;
+  reservedBalance?: string;
+  availableWeeklyBudget?: string;
+  availableTotalBudget?: string;
+  spendableBalance?: string;
   paused: boolean;
   active: boolean;
   policyVersion: number;
@@ -74,4 +79,28 @@ export interface Credential {
   agentId: string;
   treasuryId: string;
   keyVersion: number;
+}
+
+export interface AgentCard extends Treasury {
+  perPaymentLimit: string;
+  weeklyBudget: string;
+  totalBudget: string;
+  validUntil: number;
+  mandateHash?: string;
+  recipients?: string[];
+}
+export interface AgentsData {
+  mode: "demo" | "live";
+  owner: string;
+  agents: AgentCard[];
+  unavailable?: UnavailableAgent[];
+}
+export type WorkspaceView = "agents" | "agent" | "setup" | "console" | "history";
+
+export interface UnavailableAgent {
+ id: string;
+ agentId: string;
+ agentName: string;
+ code: string;
+ message: string;
 }

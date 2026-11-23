@@ -75,3 +75,94 @@
 .alert-success { border: 1px solid #bfdbcc; background: #eaf4ed; color: #2c6c4b; }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; padding: 10px; background: transparent; border-radius: 8px; color: var(--muted); min-width: 44px; min-height: 44px; }
 .icon-button:hover { background: #eee7e4; }
+
+/* Independent agent, history, and payment-console surfaces. */
+.agents-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr)); gap:23px; margin-top:32px; }
+.agent-card { display:block; border:1px solid var(--line); border-radius:20px; background:var(--surface); color:var(--ink); padding:27px; text-decoration:none; transition:border-color .18s,transform .18s; }
+.agent-card:hover { border-color:#9b919d; transform:translateY(-3px); }
+.agent-card-heading { display:flex; justify-content:space-between; align-items:center; gap:15px; margin-bottom:25px; }
+.agent-card-avatar { width:56px; height:56px; border-radius:17px; background:#dedbea; display:grid; place-items:center; }
+.agent-card-avatar-1 { background:#d8e7ed; }
+.agent-card-avatar-2 { background:#efdfd4; }
+.agent-card h2 { font-size:26px; overflow-wrap:anywhere; }
+.agent-card-address { color:var(--muted); font-size:12px; margin-top:9px; }
+.agent-card-balance { margin:28px 0 23px; }
+.agent-card-balance > span { display:block; color:var(--muted); font-size:13px; margin-bottom:10px; }
+.agent-card-balance > strong { font-size:31px; line-height:1.2; font-weight:550; font-variant-numeric:tabular-nums; letter-spacing:-.035em; }
+.agent-card-balance small { color:var(--muted); font-size:13px; margin-left:3px; letter-spacing:0; }
+.agent-card-limits { margin:0; display:flex; flex-direction:column; gap:12px; }
+.agent-card-limits > div { display:flex; justify-content:space-between; gap:15px; font-size:12px; }
+.agent-card-limits dt { color:var(--muted); }
+.agent-card-limits dd { margin:0; font-variant-numeric:tabular-nums; }
+.agent-card-open { display:flex; justify-content:space-between; align-items:center; padding-top:22px; margin-top:24px; border-top:1px solid var(--line); font-size:13px; }
+.empty-agents { max-width:790px; padding:60px 38px; border:1px solid var(--line); border-radius:22px; background:var(--surface); text-align:center; margin:35px auto 65px; }
+.empty-agents .setup-icon { margin:0 auto 25px; }
+.empty-agents h2 { font-size:29px; }
+.empty-agents p { max-width:550px; margin:17px auto 27px; font-size:15px; line-height:1.75; color:var(--muted); }
+.empty-agents .text-button { display:flex; margin:12px auto 0; }
+.agent-back { margin:0 0 16px; padding-left:0; }
+.agent-page-actions { display:flex; gap:13px; flex-wrap:wrap; margin:0 0 28px; }
+.agent-selector { display:flex; align-items:flex-end; justify-content:space-between; gap:22px; margin:27px 0 32px; padding-bottom:27px; border-bottom:1px solid var(--line); }
+.agent-selector-control { display:flex; flex-direction:column; gap:10px; font-size:13px; max-width:500px; flex:1; min-width:0; }
+.agent-selector select, .console-request-form select { min-height:48px; padding:12px 14px; border:1px solid #cfc6c3; border-radius:10px; background:var(--surface); color:var(--ink); font-family:var(--font); width:100%; cursor:pointer; }
+.agent-selector .text-button { flex-shrink:0; }
+.funding-prompt { display:flex; align-items:center; gap:17px; padding:19px 23px; background:#e5e0e8; border-radius:13px; margin:0 0 23px; }
+.funding-prompt > div { flex:1; }
+.funding-prompt strong { font-size:14px; font-weight:550; }
+.funding-prompt p { color:var(--muted); font-size:13px; line-height:1.7; margin-top:5px; }
+.vault-details { margin-top:26px; }
+.vault-details .section-description { margin:8px 0 0; font-size:13px; }
+.vault-details dl { padding:0 28px 29px; margin:0; display:flex; flex-direction:column; gap:20px; }
+.vault-details dl > div { display:grid; grid-template-columns:150px minmax(0,1fr); gap:20px; }
+.vault-details dt { color:var(--muted); font-size:13px; }
+.vault-details dd { margin:0; font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+.vault-details dd a { display:inline-flex; align-items:center; gap:9px; text-decoration:none; max-width:100%; overflow-wrap:anywhere; }
+.vault-details dd a:hover { text-decoration:underline; }
+.agent-integration-note { display:flex; align-items:flex-start; gap:18px; padding:25px 0; margin-top:17px; border-top:1px solid var(--line); }
+.agent-integration-note p { font-size:14px; color:var(--muted); line-height:1.7; margin-top:8px; max-width:720px; }
+.history-page-actions { display:flex; gap:13px; align-items:center; flex-wrap:wrap; }
+.history-page-actions > span { flex:1; font-size:17px; font-weight:550; min-width:100px; }
+.history-page-actions + .payment-panel { margin-top:22px; }
+.console-layout { display:grid; grid-template-columns:minmax(0,1fr) 285px; gap:42px; align-items:start; }
+.console-form-column > h2 { font-size:28px; }
+.console-form-column > .section-description { margin-bottom:27px; }
+.console-presets { padding:0 0 27px; }
+.console-presets > p { font-size:13px; color:var(--muted); margin-bottom:12px; }
+.console-presets > div { display:flex; flex-wrap:wrap; gap:10px; }
+.console-request-form { background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:29px; gap:17px; }
+.console-request-form .setup-fields { display:flex; flex-direction:column; gap:16px; }
+.console-request-form label { gap:9px; font-size:14px; }
+.console-request-form .field-help { font-size:12px; margin:-7px 0 2px; line-height:1.7; }
+.console-recipient-address { font-size:12px; color:#585061; overflow-wrap:anywhere; margin:-7px 0 5px; }
+.optional-label { color:var(--muted); font-weight:400; font-size:12px; }
+.console-submit { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding-top:9px; }
+.console-policy { padding:30px 26px; border-radius:19px; background:#e6e0e8; }
+.console-policy .setup-icon { margin-bottom:23px; background:#f8f2ee; }
+.console-policy h3 { font-size:19px; }
+.console-policy > p { font-size:14px; line-height:1.8; margin-top:15px; overflow-wrap:anywhere; }
+.console-policy dl { margin:27px 0 25px; padding-top:20px; border-top:1px solid #cec6d3; display:flex; flex-direction:column; gap:15px; }
+.console-policy dl > div { display:flex; justify-content:space-between; gap:15px; font-size:12px; }
+.console-policy dt { color:#635a6c; }
+.console-policy dd { margin:0; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.console-policy .console-execution-note { font-size:12px; color:#635a6c; line-height:1.8; }
+.console-error { border-radius:11px; border:1px solid #dfbdb8; background:#faece7; color:#943f3b; padding:15px 17px; }
+.console-error p { font-size:13px; line-height:1.75; }
+.console-error p + p { margin-top:9px; }
+.request-recorded { display:flex; align-items:flex-start; gap:13px; background:#eaf4ed; color:#2c6c4b; border-radius:12px; padding:22px; }
+.request-recorded strong { font-size:16px; font-weight:550; }
+.request-recorded p { font-size:13px; line-height:1.75; margin-top:9px; }
+.request-recorded .primary-button { margin-top:18px; font-size:13px; }
+.request-recorded .text-button { font-size:12px; }
+.request-reference { margin-top:9px; border-top:1px solid var(--line); padding-top:15px; color:var(--muted); }
+.request-reference summary { cursor:pointer; font-size:12px; min-height:35px; padding-top:5px; }
+.request-reference p { font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.agent-card-unavailable { background:#f3eeeb; }
+.agent-card-unavailable:hover { transform:none; border-color:var(--line); }
+.agent-card-balance .unavailable-balance { font-size:23px; color:var(--muted); letter-spacing:-.02em; }
+.unavailable-reason { color:var(--muted); font-size:13px; line-height:1.75; }
+.mandate-expiry { padding:0 28px 25px; margin:0; font-size:12px; }
+.mandate-renewal { padding:18px; background:#efe9ee; border-radius:12px; }
+.stack-form .renewal-option { display:flex; flex-direction:row; align-items:center; gap:10px; }
+.renewal-option input { width:18px; height:18px; min-height:18px; accent-color:var(--ink); }
+.mandate-renewal > label:not(.renewal-option) { margin-top:17px; }
+.mandate-renewal .field-help { margin-top:10px; }

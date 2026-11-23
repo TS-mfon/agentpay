@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import Icon from "./Icon";
 import Dialog from "./Dialog";
 import { api } from "./api";
+import { scopedPath } from "./workspace-model";
 import { formatMoney, shorten } from "./view-model";
 import type { Credential, DashboardData, OwnerAction } from "./types";
 export default function TreasuryControls({
@@ -10,12 +11,15 @@ export default function TreasuryControls({
   busy,
   onControl,
   onRefresh,
+  onRenew,
 }: {
   data: DashboardData;
   busy: boolean;
   onControl: (action: OwnerAction, amount?: string) => Promise<void>;
   onRefresh: () => Promise<void>;
+  onRenew?: () => void;
 }) {
+  const expired = data.policy.validUntil * 1000 <= Date.now();
   const [dialog, setDialog] = useState<
     "fund" | "withdraw" | "key" | "revoke" | null
   >(null);
@@ -64,7 +68,7 @@ export default function TreasuryControls({
     setError("");
     try {
       setKey(
-        await api<Credential>("/api/owner/credentials", { action: "rotate" }),
+        await api<Credential>(scopedPath("/api/owner/credentials", data.treasury.id), { action: "rotate" }),
       );
       await onRefresh();
     } catch (failure) {
@@ -116,15 +120,15 @@ export default function TreasuryControls({
           className="secondary-button"
           disabled={busy}
           onClick={() =>
-            void directControl(data.treasury.paused ? "resume" : "pause")
+            data.treasury.paused && expired ? onRenew?.() : void directControl(data.treasury.paused ? "resume" : "pause")
           }
         >
           <Icon name={data.treasury.paused ? "play" : "pause"} size={17} />
-          {data.treasury.paused ? "Resume treasury" : "Pause treasury"}
+          {data.treasury.paused ? expired ? "Renew before resuming" : "Resume treasury" : "Pause treasury"}
         </button>
         <button
           className="secondary-button"
-          disabled={busy || keyBusy}
+          disabled={busy || keyBusy || expired || !data.treasury.active}
           onClick={() => open("key")}
         >
           <Icon name="key" size={17} /> Agent API key
@@ -133,12 +137,14 @@ export default function TreasuryControls({
           className="text-button danger-text"
           disabled={busy}
           onClick={() =>
-            data.treasury.active
+            expired
+              ? onRenew?.()
+              : data.treasury.active
               ? open("revoke")
               : void directControl("reactivate")
           }
         >
-          {data.treasury.active ? "Revoke agent" : "Authorize agent again"}
+          {expired ? "Renew agent authority" : data.treasury.active ? "Revoke agent" : "Authorize agent again"}
         </button>
       </div>
       {error && !dialog ? (

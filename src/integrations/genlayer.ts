@@ -1,3 +1,4 @@
+import { AppError } from "../core/errors";
 import { createClient, createAccount, isSuccessful } from "genlayer-js";
 import { governanceChain } from "./genlayer-network";
 import { TransactionHashVariant, TransactionStatus } from "genlayer-js/types";
@@ -43,15 +44,14 @@ export function createGenLayerGovernance(): Governance {
     async register(policy) {
       const existing = await reader("get_policy", [policyKey(policy)]);
       if (typeof existing === "string" && existing) {
-        const record = JSON.parse(existing) as {
-          mandate_hash: string;
-          text: string;
-        };
+        let record: { mandate_hash: string; text: string };
+        try { record = JSON.parse(existing); }
+        catch { throw new AppError("POLICY_RECORD_MALFORMED", "Finalized policy record is malformed.", 503); }
         if (
           record.mandate_hash !== policy.mandateHash ||
           record.text !== policy.mandate
         )
-          throw new Error("Finalized policy does not match owner mandate");
+          throw new AppError("POLICY_RECORD_MISMATCH", "Finalized policy does not match owner mandate", 409);
         return;
       }
       if (!key)
@@ -79,7 +79,7 @@ export function createGenLayerGovernance(): Governance {
         retries: 36,
       });
       if (!isSuccessful(receipt))
-        throw new Error("Policy registration failed to finalize successfully");
+        throw new AppError("POLICY_REGISTRATION_FAILED", "Policy registration failed to finalize successfully", 503);
     },
     async submit(policy, payment) {
       if (!key)
@@ -125,13 +125,17 @@ export function createGenLayerGovernance(): Governance {
           mandateHash: payment.mandateHash,
         };
       if (!isSuccessful(transaction))
-        throw new Error(
-          "GenLayer evaluation finalized with an execution error",
-        );
+        throw new AppError("EVALUATION_FAILED", "GenLayer evaluation finalized with an execution error. No payment was authorized.", 503);
       const encoded = await reader("get_decision", [payment.id]);
-      if (typeof encoded !== "string" || !encoded)
-        throw new Error("Finalized decision record is unavailable");
-      const decision = decisionSchema.parse(JSON.parse(encoded));
+      if (encoded === "" || encoded == null)
+        return { finalized: true, status: "unavailable", reason: "Finalized decision record is unavailable.",
+          requestHash: payment.requestHash, mandateHash: payment.mandateHash };
+      let decoded: unknown;
+      try { decoded = typeof encoded === "string" ? JSON.parse(encoded) : null; }
+      catch { throw new AppError("EVALUATION_MALFORMED", "Finalized decision record is malformed. No payment was authorized.", 503); }
+      const parsed = decisionSchema.safeParse(decoded);
+      if (!parsed.success) throw new AppError("EVALUATION_MALFORMED", "Finalized decision record is malformed. No payment was authorized.", 503);
+      const decision = parsed.data;
       const expectedKey = `${payment.treasuryId.toLowerCase()}:${payment.agentId.toLowerCase()}:${payment.policyVersion}`;
       if (
         decision.request_id !== payment.id ||
@@ -140,7 +144,7 @@ export function createGenLayerGovernance(): Governance {
         decision.request_hash !== payment.requestHash ||
         decision.mandate_hash !== payment.mandateHash
       )
-        throw new Error("Decision binding mismatch");
+        throw new AppError("DECISION_MISMATCH", "Decision binding mismatch. No payment was authorized.", 409);
       return {
         finalized: true,
         status: decision.status,

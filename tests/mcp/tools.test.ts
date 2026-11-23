@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransport, type JSONRPCMessage } from "@modelcontextprotocol/server";
 import { createAgentPayServer } from "../../mcp/tools";
 import { AgentPayClient } from "../../mcp/client";
+import { treasuryFixture, policyFixture, paymentFixture } from "./fixtures";
 
 async function setup() {
-  const fetcher = vi.fn(async (_url: string | URL | Request, _options?: RequestInit) => new Response(JSON.stringify({success:true,data:{id:"0x"+"b".repeat(64),status:"queued"}})));
+  const fetcher = vi.fn(async (url: string | URL | Request, options?: RequestInit) => {
+    const path = new URL(String(url)).pathname;
+    const data = path.endsWith("treasury") ? treasuryFixture : path.endsWith("policy") ? policyFixture : path.endsWith("payments") && options?.method !== "POST" ? [paymentFixture()] : paymentFixture();
+    return new Response(JSON.stringify({success:true,data}));
+  });
   const client = new AgentPayClient("https://agentpay.example", "ap_" + "a".repeat(43), {fetch:fetcher});
   const server = createAgentPayServer(client);
   const [caller, transport] = InMemoryTransport.createLinkedPair();
@@ -48,9 +53,9 @@ describe("AgentPay MCP tool protocol", () => {
         const reply=await s.call("tools/call",{name,arguments:args});
         expect(reply.result.isError).not.toBe(true);
       }
-      s.fetcher.mockImplementation(async()=>new Response(JSON.stringify({success:true,data:[{id:"one"},{id:"two"}]})));
+      s.fetcher.mockImplementation(async()=>new Response(JSON.stringify({success:true,data:[paymentFixture(),paymentFixture("0x"+"d".repeat(64))]})));
       const history=await s.call("tools/call",{name:"agentpay_payment_history",arguments:{limit:1}});
-      expect(JSON.parse(history.result.content[0].text).data).toEqual([{id:"one"}]);
+      expect(JSON.parse(history.result.content[0].text).data).toEqual([paymentFixture()]);
     } finally {await s.server.close();}
   });
   it("reports API denial and unexpected failures without leaking details", async () => {

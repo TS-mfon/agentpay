@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import Icon from "./Icon";
 import Dialog from "./Dialog";
 import {
@@ -22,13 +23,17 @@ export default function PaymentHistory({
   mode,
   busy,
   onProcess,
+  initialSelectedId,
+  treasuryId,
 }: {
   payments: Payment[];
   mode: "demo" | "live";
   busy: boolean;
   onProcess: () => Promise<void>;
+  initialSelectedId?: string;
+  treasuryId?: string;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
   const selected = payments.find((payment) => payment.id === selectedId);
   const pending = payments.some((payment) =>
     [
@@ -118,8 +123,9 @@ export default function PaymentHistory({
           </span>
           <h3>Your first payment starts with a request.</h3>
           <p>
-            Choose a service above to see its policy decision and receipt here.
+            Submit a payment from the console. Its decision and receipt will appear here.
           </p>
+          <Link className="text-button" href={treasuryId ? `/console?treasuryId=${encodeURIComponent(treasuryId)}` : "/console"}>Open payment console</Link>
         </div>
       )}
       {selected ? (

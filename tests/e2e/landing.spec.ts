@@ -4,7 +4,7 @@ test("landing presents AgentPay and links to the real onboarding and docs", asyn
   await page.goto("/");
   await expect(page.getByRole("heading", {name:"Agents in Motion"})).toBeVisible();
   await expect(page.getByText("Payment infrastructure for AI agents", {exact:true})).toBeVisible();
-  await expect(page.getByRole("link", {name:"Set up your agent"}).first()).toHaveAttribute("href","/workspace");
+  await expect(page.getByRole("link", {name:"Set up your agent"}).first()).toHaveAttribute("href","/setup");
   await expect(page.getByRole("link", {name:"Documentation", exact:true})).toHaveAttribute("href","/docs");
   await page.getByRole("button",{name:"Pause story motion"}).click();
   await expect(page.locator(".ap-landing")).toHaveClass(/ap-reduced/);
@@ -52,8 +52,7 @@ test("section navigation reaches the corresponding visible story beat", async ({
   await page.goto("/");
   await page.getByRole("link", {name:"How it works",exact:true}).click();
   await expect(page.getByRole("link",{name:"Explore the payment flow"})).toBeVisible();
-  const position=await page.evaluate(()=>scrollY / (document.querySelector<HTMLElement>("#story")!.offsetHeight-innerHeight));
-  expect(position).toBeGreaterThan(.15);
+  await expect.poll(() => page.evaluate(()=>scrollY / (document.querySelector<HTMLElement>("#story")!.offsetHeight-innerHeight))).toBeCloseTo(.20, 2);
   await page.getByRole("link", {name:"Your control",exact:true}).click();
   await expect(page.locator(".ap-landing")).toHaveClass(/ap-sky-reveal/,{timeout:15000});
 });
