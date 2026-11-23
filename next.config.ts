@@ -17,6 +17,15 @@ const config: NextConfig = {
       "./.env*",
     ],
   },
+  async redirects() {
+    if (process.env.VERCEL_ENV !== "production") return [];
+    return [{
+      source: "/:path*",
+      has: [{ type: "host", value: "agentpay-gen-daves-projects.vercel.app" }],
+      destination: "https://agentpay-roan.vercel.app/:path*",
+      permanent: true,
+    }];
+  },
   async headers() {
     return [
       {

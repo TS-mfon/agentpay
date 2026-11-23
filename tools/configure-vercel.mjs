@@ -1,6 +1,7 @@
 import nextEnv from "@next/env";
 import { spawnSync } from "node:child_process";
 nextEnv.loadEnvConfig(process.cwd());
+const environment = process.argv.includes("--production") ? "production" : "preview";
 const values = {
   AGENTPAY_MODE: "live",
   MONGODB_URI: process.env.MONGODB_URI,
@@ -10,6 +11,7 @@ const values = {
   GENLAYER_CONTRACT_ADDRESS: process.env.GENLAYER_CONTRACT_ADDRESS,
   AGENTPAY_SHOWCASE_TREASURY: process.env.AGENTPAY_SHOWCASE_TREASURY,
   AGENTPAY_SERVICES_JSON: process.env.AGENTPAY_SERVICES_JSON || "[]",
+  ...(environment === "production" ? { APP_ORIGIN: "https://agentpay-roan.vercel.app" } : {}),
 };
 for (const [name, value] of Object.entries(values)) {
   if (!value) throw new Error(`Missing ${name}`);
@@ -18,10 +20,11 @@ for (const [name, value] of Object.entries(values)) {
     "add",
     name,
     "--environment",
-    "preview",
+    environment,
     "--scope",
     "gen-daves-projects",
     "--yes",
+    "--force",
   ];
   if (name === "MONGODB_URI") args.push("--sensitive");
   const result = spawnSync("vercel", args, {
@@ -35,8 +38,8 @@ for (const [name, value] of Object.entries(values)) {
         "[redacted]",
       ),
     );
-  console.log(`Configured preview variable ${name}`);
+  console.log(`Configured ${environment} variable ${name}`);
 }
 console.log(
-  "Preview environment configured; signing keys were not sent to Vercel.",
+  `${environment} environment configured; signing keys were not sent to Vercel.`,
 );

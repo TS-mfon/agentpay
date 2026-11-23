@@ -18,7 +18,7 @@ Agent request → deterministic validation → GenLayer judgment → finalized a
 | Track | Native AI Assistants / Decentralized Payments |
 | Payment network | QDay Aevum Testnet, chain `44005` |
 | Governance environment | GenLayer Studio development network, chain `61997` |
-| App | [Open the testnet preview](https://agentpay-n32yb9o6z-gen-daves-projects.vercel.app) |
+| App | [Open the testnet preview](https://agentpay-roan.vercel.app) |
 | Agent integration | [API reference](docs/api.md), [MCP adapter](mcp/README.md), [agent skill](skills/agentpay/SKILL.md) |
 | Source | [TS-mfon/agentpay](https://github.com/TS-mfon/agentpay), MIT license |
 
@@ -416,7 +416,7 @@ curl --fail-with-body --request POST "$AGENTPAY_BASE_URL/api/v1/payments" \
   --header "Authorization: Bearer $AGENTPAY_API_KEY" \
   --header "Content-Type: application/json" --data-binary @purchase.json
 ```
-Send `Authorization: Bearer <credential>` and `Content-Type: application/json`. Preserve the exact payload/key before submission and save the returned request ID. Poll that ID every 15-30 seconds with backoff. `validUntil` is Unix seconds; request timestamps are ISO UTC strings. The [web guide](https://agentpay-n32yb9o6z-gen-daves-projects.vercel.app/docs) contains executable integration examples.
+Send `Authorization: Bearer <credential>` and `Content-Type: application/json`. Preserve the exact payload/key before submission and save the returned request ID. Poll that ID every 15-30 seconds with backoff. `validUntil` is Unix seconds; request timestamps are ISO UTC strings. The [web guide](https://agentpay-roan.vercel.app/docs) contains executable integration examples.
 
 ### Owner API selection
 
