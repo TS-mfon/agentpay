@@ -232,7 +232,13 @@ export default function Showcase() {
         >
           Open-source code
         </a>
-        <a href="/demo.webm">Prototype walkthrough (simulated)</a>
+        <a
+          href="https://github.com/TS-mfon/agentpay/blob/main/docs/evidence.md"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Verified on-chain payment evidence
+        </a>
         <a
           href="https://explorer-studio-dev.genlayer.com"
           target="_blank"

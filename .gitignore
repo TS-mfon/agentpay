@@ -17,3 +17,4 @@ contracts/coverage-out/
 contracts/coverage-cache/
 .vercel
 .vercel/
+public/demo.webm

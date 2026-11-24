@@ -4,6 +4,7 @@
 .local
 .unlazy
 .venv
+public/demo.webm
 coverage
 contracts/out
 contracts/cache

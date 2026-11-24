@@ -24,8 +24,23 @@ Agent request → deterministic validation → GenLayer judgment → finalized a
 
 The deployed app defaults to live operation. It does not substitute simulated balances, approvals, or transfers when live infrastructure is unavailable. Testnet assets are used throughout this release. The executor is a trusted cross-chain component; Aevum does not cryptographically verify GenLayer consensus. Read the [security and trust model](#security-and-trust-model) before funding a treasury.
 
+## Verified end-to-end payments
+
+On **24 November 2026**, three explicitly owner-authorized nominal requests each transferred **0.001 tUSD8** on Aevum Testnet and reached `settled` with no payment error. Independent public RPC checks verified all three finalized successful GenLayer approvals, matching vault receipt events, and actual official tUSD8 transfers.
+
+| Authorized test | Verified Aevum receipt |
+| --- | --- |
+| Electricity billing context | [Successful transaction](https://explorer-test.qday.info/tx/0x6a3b02d996da3bf7b2715468ab71681b110da75ab1f3ea089c155429eaa8571e) |
+| Water billing context | [Successful transaction](https://explorer-test.qday.info/tx/0xdaf73a6bcb5f4ba8c4ef8266567bcd575b9745582ce790da3e5bda11ad3d8711) |
+| Tuition and school-transport context | [Successful transaction](https://explorer-test.qday.info/tx/0x0df6b11369398718cf090874d87ced7267359f0cd4bf4255591b53caf4496b8d) |
+
+Historical checks recorded **0.050 → 0.047 tUSD8** in the [payment test vault](https://explorer-test.qday.info/address/0xfd2b1aeecf62c7d904f2c1dffee90b17be1bffd7), **0.003 tUSD8** weekly/lifetime spending, and distinct executor nonces **0, 1, 2**. Each receipt proves a 1,000-unit transfer from that vault to the owner-designated recipient. Public provider billing pages supplied context; provider-wallet ownership, an actual household debt, and service fulfillment were not claimed.
+
+Judges and agents can inspect the [complete evidence record](docs/evidence.md), [machine-readable manifest](docs/evidence/household-payments-2026-11-24.json), and [read-only verifier](tools/verify-payment-evidence.mjs). After `npm ci`, run `node tools/verify-payment-evidence.mjs`. This reads public chain state without keys or new transactions. The record includes exact request/decision/hash bindings, billing sources, the earlier rejection/needs-information assessment, and development-network limitations.
+
 ## Contents
 
+- [Verified end-to-end payments](#verified-end-to-end-payments)
 - [The problem and product](#the-problem-and-product)
 - [Capabilities and user journey](#capabilities-and-user-journey)
 - [Protocol architecture](#protocol-architecture)
@@ -517,7 +532,7 @@ Aevum interactions use verified EVM JSON-RPC through viem and HTTPS polling. The
 | GenLayer deployment transaction | `0x34a72671cf07eaab0420f23469f86b8cb88fe7d5a594e79a9e32d57acb242726` |
 | Machine-readable evidence | [Aevum deployment](docs/deployments/aevum.json), [GenLayer deployment](docs/deployments/genlayer.json) |
 
-These records prove recorded deployments, not that every request has completed. A successful end-to-end payment needs its own finalized matching GenLayer decision and successful Aevum receipt. Development-network resets can invalidate a previously recorded governance deployment; verify contract availability before a demonstration.
+These records prove recorded deployments, not that every request has completed. A successful end-to-end payment needs its own finalized matching GenLayer decision and successful Aevum receipt. The [verified payment evidence](docs/evidence.md) records completed payments from a separately owner-created test vault. Development-network resets can invalidate a previously recorded governance deployment; verify contract availability before a demonstration.
 
 ## Run the dapp
 
