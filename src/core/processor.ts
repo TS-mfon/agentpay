@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import type { AtomicStore, Ports } from "./ports";
+import type { AtomicStore, Ports, SignedGovernanceTransaction, PolicyDecision } from "./ports";
 import type { Payment, Treasury, Policy, State, Mode } from "./types";
 import { AppError } from "./errors";
 import { units, decimal, sameAddress } from "./validation";
 import { checkLimits } from "./financial";
+import { expireRequests, selectDueRequest, retryDelay, governancePending, isTerminal, MAX_TRANSIENT_FAILURES, WORKER_LEASE_MS } from "./queue";
 export class PaymentProcessor {
   constructor(
     readonly store: AtomicStore,
@@ -17,11 +18,12 @@ export class PaymentProcessor {
     const token = randomBytes(24).toString("hex");
     const claimed = await this.store.update((s) => {
       if (s.workerLease && s.workerLease.expiresAt > this.now()) return s;
-      return { ...s, workerLease: { token, expiresAt: this.now() + 900000 } };
+      return { ...s, workerLease: { token, expiresAt: this.now() + WORKER_LEASE_MS } };
     });
     if (claimed.workerLease?.token !== token) return 0;
     let processed = 0;
     try {
+      await this.store.update(s => expireRequests(s, this.now()));
       for (let index = 0; index < Math.min(20, Math.max(1, limit)); index++) {
         await this.store.update((s) => {
           if (
@@ -35,7 +37,7 @@ export class PaymentProcessor {
             );
           return {
             ...s,
-            workerLease: { token, expiresAt: this.now() + 900000 },
+            workerLease: { token, expiresAt: this.now() + WORKER_LEASE_MS },
           };
         });
         const request = await this.claim();
@@ -54,17 +56,13 @@ export class PaymentProcessor {
     let result: Payment | undefined;
     const now = this.now();
     await this.store.update((s) => {
-      const candidate =
-        s.payments.find((p) => p.status === "executing") ??
-        s.payments.find((p) => p.status === "approved") ??
-        s.payments.find((p) => p.status === "awaiting_finality") ??
-        s.payments.find((p) => p.status === "evaluating") ??
-        s.payments.find((p) => p.status === "queued");
-      if (!candidate || (candidate.leaseUntil ?? 0) > now) return s;
+      const candidate = selectDueRequest(s, now);
+      if (!candidate) return s;
       result = {
         ...candidate,
-        leaseUntil: now + 300000,
+        leaseUntil: now + WORKER_LEASE_MS,
         attempts: candidate.attempts + 1,
+        lastAttemptAt: now,
       };
       return {
         ...s,
@@ -81,17 +79,45 @@ export class PaymentProcessor {
   }
   private async process(payment: Payment, workerToken: string) {
     try {
+      if (isTerminal(payment) && governancePending(payment)) return await this.drainGovernance(payment, workerToken);
       const context = await this.validate(payment);
       if (!context) return;
       if (payment.status === "queued" || payment.status === "evaluating")
-        return await this.evaluate(payment, context.policy);
+        return await this.evaluate(payment, context.policy, context.t, workerToken);
       if (payment.status === "awaiting_finality")
-        return await this.inspectDecision(payment, workerToken);
+        return await this.inspectDecision(payment, workerToken, context.t.owner);
       if (payment.status === "approved")
         await this.executeApproved(payment, context.t, workerToken);
     } catch (error) {
-      await this.recordFailure(payment, error);
+      await this.recordFailure(payment, error, workerToken);
     }
+  }
+  private async drainGovernance(payment: Payment, token: string) {
+    const reference = payment.decisionRef ?? payment.policyRegistration?.reference;
+    if (!reference) throw new AppError("MISSING_DECISION", "Unresolved governance write has no durable reference.");
+    const inspected = payment.decisionRef ? payment : { ...payment, rawGovernanceTransaction: payment.policyRegistration?.rawTransaction };
+    const decision = await this.ports.governance.inspect(reference, inspected);
+    if (!decision.finalized || decision.status === "pending") {
+      await this.updateOwned(payment, token, p => ({ ...p, leaseUntil: undefined, retryAt: this.now() + 10000, consecutiveFailures: 0 }));
+      return;
+    }
+    await this.updateOwned(payment, token, p => ({ ...p, governanceUnresolved: false,
+      rawGovernanceTransaction: undefined, policyRegistration: undefined,
+      leaseUntil: undefined, retryAt: undefined, consecutiveFailures: 0 }));
+  }
+  private assertWorker(state: State, token: string) {
+    if (state.workerLease?.token !== token || state.workerLease.expiresAt <= this.now())
+      throw new AppError("LEASE_LOST", "Worker lease expired before recording governance state.", 409);
+  }
+  private async updateOwned(payment: Payment, token: string, transform: (current: Payment, state: State) => Payment) {
+    await this.store.update(state => {
+      this.assertWorker(state, token);
+      const current = state.payments.find(p => p.id === payment.id);
+      if (!current || current.decisionRef !== payment.decisionRef ||
+        current.policyRegistration?.reference !== payment.policyRegistration?.reference)
+        throw new AppError("LEASE_LOST", "The inspected governance journal changed before reconciliation.", 409);
+      return { ...state, payments: state.payments.map(p => p.id === payment.id ? transform(p, state) : p) };
+    });
   }
   private async validate(
     payment: Payment,
@@ -149,21 +175,62 @@ export class PaymentProcessor {
     );
     return { t, policy };
   }
-  private async evaluate(payment: Payment, policy: Policy) {
-    await this.ports.governance.register(policy);
-    const reference = await this.ports.governance.submit(policy, payment);
-    await this.patch(payment.id, {
-      status: "awaiting_finality",
-      decisionRef: reference,
-      evaluationReferences: [
-        ...(payment.evaluationReferences ?? []),
-        reference,
-      ],
-      leaseUntil: undefined,
-      error: undefined,
+  private async evaluate(payment: Payment, policy: Policy, treasury: Treasury, token: string) {
+    await this.ports.governance.register(policy, {
+      prepared: payment.policyRegistration,
+      onPrepared: prepared => this.journalGovernance(payment, treasury, token, prepared, true),
+    });
+    await this.store.update(state => {
+      this.assertSubmissionAuthority(state, payment, treasury, token);
+      return { ...state, payments: state.payments.map(p => p.id === payment.id
+        ? { ...p, policyRegistration: undefined, governanceUnresolved: false } : p) };
+    });
+    const reference = await this.ports.governance.submit(policy, payment, {
+      onPrepared: prepared => this.journalGovernance(payment, treasury, token, prepared, false),
+    });
+    await this.finishEvaluationSubmission(payment, treasury, token, reference);
+  }
+  private async journalGovernance(payment: Payment, treasury: Treasury, token: string,
+    prepared: SignedGovernanceTransaction, registration: boolean) {
+    await this.store.update(state => {
+      this.assertSubmissionAuthority(state, payment, treasury, token);
+      return { ...state, payments: state.payments.map(p => {
+        if (p.id !== payment.id) return p;
+        if (registration) return { ...p, status: "evaluating", policyRegistration: prepared, governanceUnresolved: true };
+        return { ...p, status: "awaiting_finality", decisionRef: prepared.reference,
+          rawGovernanceTransaction: prepared.rawTransaction, governanceUnresolved: true,
+          evaluationReferences: this.references(p, prepared.reference) };
+      }) };
     });
   }
-  private async inspectDecision(payment: Payment, workerToken: string) {
+  private references(payment: Payment, reference: string) {
+    const history = payment.evaluationReferences ?? (payment.decisionRef ? [payment.decisionRef] : []);
+    return history.includes(reference) ? history : [...history, reference];
+  }
+  private async finishEvaluationSubmission(payment: Payment, treasury: Treasury, token: string, reference: string) {
+    await this.store.update(state => {
+      this.assertSubmissionAuthority(state, payment, treasury, token);
+      return { ...state, payments: state.payments.map(p => {
+        if (p.id !== payment.id) return p;
+        if (p.rawGovernanceTransaction && p.decisionRef !== reference)
+          throw new AppError("DECISION_REFERENCE_MISMATCH", "Submitted transaction differs from its durable signing journal.", 409);
+        return { ...p, status: "awaiting_finality", decisionRef: reference, governanceUnresolved: true,
+          evaluationReferences: this.references(p, reference), leaseUntil: undefined,
+          retryAt: undefined, consecutiveFailures: 0, error: undefined };
+      }) };
+    });
+  }
+  private assertSubmissionAuthority(state: State, payment: Payment, treasury: Treasury, token: string) {
+    if (state.workerLease?.token !== token || state.workerLease.expiresAt <= this.now())
+      throw new AppError("LEASE_LOST", "Worker lease expired before governance submission.", 409);
+    const current = state.treasuries.find(t => t.id === payment.treasuryId);
+    const request = state.payments.find(p => p.id === payment.id);
+    if (!current || !sameAddress(current.owner, treasury.owner) || current.paused || !current.active ||
+      current.policyVersion !== payment.policyVersion || request?.requestHash !== payment.requestHash ||
+      !["queued", "evaluating", "awaiting_finality"].includes(request.status) || Date.parse(request.expiresAt) <= this.now())
+      throw new AppError("AUTHORITY_CHANGED", "Spending authority changed before governance submission.", 409);
+  }
+  private async inspectDecision(payment: Payment, workerToken: string, expectedOwner: string) {
     if (!payment.decisionRef)
       throw new AppError(
         "MISSING_DECISION",
@@ -174,30 +241,49 @@ export class PaymentProcessor {
       payment,
     );
     if (!decision.finalized || decision.status === "pending") {
-      await this.patch(payment.id, { leaseUntil: this.now() + 10000 });
+      await this.updateOwned(payment, workerToken, p => ({ ...p, leaseUntil: undefined, retryAt: this.now() + 10000, consecutiveFailures: 0 }));
       return;
     }
-    if (decision.status === "unavailable") {
+    const recoverable = await this.recordFinalizedDecision(payment, decision, workerToken, expectedOwner);
+    if (decision.status === "unavailable" && recoverable) {
       await this.recoverDecision(payment, workerToken);
-      return;
     }
+  }
+  private async recordFinalizedDecision(payment: Payment, decision: PolicyDecision, token: string, expectedOwner: string) {
     if (
+      decision.status !== "unavailable" && (
       decision.requestHash !== payment.requestHash ||
-      decision.mandateHash !== payment.mandateHash
+      decision.mandateHash !== payment.mandateHash)
     )
       throw new AppError(
         "DECISION_MISMATCH",
         "Finalized decision does not match this request and mandate.",
       );
-    await this.patch(payment.id, {
-      status: decision.status,
-      decisionReason: decision.reason,
-      approvalExpiresAt: Math.floor(Date.parse(payment.expiresAt) / 1000),
-      leaseUntil: undefined,
+    let recoverable = false;
+    await this.updateOwned(payment, token, (current, state) => {
+      const treasury = state.treasuries.find(t => t.id === payment.treasuryId);
+      const policy = state.policies.find(p => p.treasuryId === payment.treasuryId && p.version === payment.policyVersion);
+      const expired = Date.parse(current.expiresAt) <= this.now();
+      const authorized = current.status === "awaiting_finality" && !!treasury && !!policy &&
+        sameAddress(treasury.owner, expectedOwner) &&
+        treasury.active && !treasury.paused && treasury.policyVersion === payment.policyVersion &&
+        current.mandateHash === policy.mandateHash && current.requestHash === payment.requestHash && !expired;
+      const finalized = { ...current, governanceUnresolved: false, rawGovernanceTransaction: undefined,
+        leaseUntil: undefined, retryAt: undefined, consecutiveFailures: 0 };
+      if (!authorized) return isTerminal(current) ? finalized : { ...finalized,
+        status: expired ? "expired" : "failed", error: "Spending authority changed before the finalized decision was recorded." };
+      recoverable = decision.status === "unavailable";
+      if (recoverable) return finalized;
+      return { ...finalized, status: decision.status as "approved" | "rejected" | "needs_information",
+        decisionReason: decision.reason, approvalExpiresAt: Math.floor(Date.parse(current.expiresAt) / 1000), error: undefined };
     });
-    return;
+    return recoverable;
   }
   private async recoverDecision(payment: Payment, workerToken: string) {
+    if ((await this.store.read()).payments.some(p => p.id !== payment.id && governancePending(p))) {
+      await this.patch(payment.id, { leaseUntil: undefined, retryAt: this.now() + 10000 });
+      return;
+    }
     const context = await this.validate(payment);
     if (!context) return;
     const reserved = await this.store.update((state) => {
@@ -223,6 +309,7 @@ export class PaymentProcessor {
     const reference = await this.ports.governance.submit(
       context.policy,
       current,
+      { onPrepared: prepared => this.journalGovernance(payment, context.t, workerToken, prepared, false) },
     );
     await this.store.update((state) => {
       this.assertRecoveryAuthority(state, payment, context.t, workerToken);
@@ -238,8 +325,11 @@ export class PaymentProcessor {
                 ...p,
                 status: "awaiting_finality",
                 decisionRef: reference,
-                evaluationReferences: [...history, reference],
+                evaluationReferences: history.includes(reference) ? history : [...history, reference],
+                governanceUnresolved: true,
                 leaseUntil: undefined,
+                retryAt: undefined,
+                consecutiveFailures: 0,
                 error: undefined,
               }
             : p,
@@ -323,7 +413,7 @@ export class PaymentProcessor {
                 transactionHash:
                   this.mode === "live" ? prepared.hash : undefined,
                 rawTransaction: prepared.rawTransaction,
-                leaseUntil: this.now() + 300000,
+                leaseUntil: this.now() + WORKER_LEASE_MS,
               }
             : r,
         ),
@@ -340,29 +430,57 @@ export class PaymentProcessor {
       t,
     );
   }
-  private async recordFailure(payment: Payment, error: unknown) {
+  private async recordFailure(payment: Payment, error: unknown, token: string) {
     const state = await this.store.read();
+    if (state.workerLease?.token !== token || state.workerLease.expiresAt <= this.now()) return;
     const current = state.payments.find((p) => p.id === payment.id);
     const message =
       error instanceof AppError
         ? error.message
         : "Execution temporarily unavailable; reconciliation will retry.";
-    if (current?.status === "executing") {
-      await this.patch(payment.id, {
+    if (!current || (error instanceof AppError && error.code === "LEASE_LOST")) return;
+    const finalizedError = error instanceof AppError &&
+      ["EVALUATION_FAILED", "EVALUATION_MALFORMED", "EVALUATION_RECORD_UNAVAILABLE", "POLICY_REGISTRATION_FAILED", "DECISION_MISMATCH"].includes(error.code);
+    if (isTerminal(current) && !governancePending(current)) return;
+    const failures = (current.consecutiveFailures ?? 0) + 1;
+    if (current.status === "executing") {
+      await this.updateOwned(payment, token, p => ({ ...p,
         error: message,
-        leaseUntil: this.now() + 10000,
-      });
+        consecutiveFailures: failures,
+        leaseUntil: undefined,
+        retryAt: this.now() + retryDelay(current, failures),
+      }));
       return;
     }
-    const terminal = error instanceof AppError;
-    await this.patch(payment.id, {
-      status: terminal ? "failed" : payment.status,
-      error: message,
-      leaseUntil: terminal ? undefined : this.now() + 15000,
-    });
+    const terminal = error instanceof AppError && (error.status < 500 || finalizedError);
+    const exhausted = failures >= MAX_TRANSIENT_FAILURES;
+    const unresolved = !finalizedError && governancePending(current);
+    const retainTerminal = isTerminal(current);
+    await this.updateOwned(current, token, p => ({ ...p,
+      status: retainTerminal ? current.status : terminal || exhausted ? "failed" : current.status,
+      error: exhausted && !terminal ? "RPC retry budget exhausted. No funds were settled; inspect configuration before retrying this request." : message,
+      consecutiveFailures: failures,
+      leaseUntil: undefined,
+      retryAt: (terminal || exhausted) && !unresolved ? undefined : this.now() + retryDelay(current, failures),
+      governanceUnresolved: unresolved,
+      rawGovernanceTransaction: finalizedError ? undefined : current.rawGovernanceTransaction,
+      policyRegistration: finalizedError ? undefined : current.policyRegistration,
+    }));
   }
   private async reconcile(payment: Payment, treasury: Treasury) {
     const outcome = await this.ports.settlement.reconcile(payment);
+    if (outcome.status === "verification_failed") {
+      await this.patch(payment.id, {
+        status: "failed",
+        transactionHash: outcome.transactionHash ?? payment.transactionHash,
+        error: "Successful transaction did not prove the requested payment; review its receipt before resubmitting.",
+        leaseUntil: undefined,
+        retryAt: undefined,
+        consecutiveFailures: 0,
+        rawTransaction: undefined,
+      });
+      return;
+    }
     if (outcome.status === "settled") {
       await this.store.update((s) => {
         const current = s.payments.find((p) => p.id === payment.id);
@@ -398,6 +516,8 @@ export class PaymentProcessor {
                   rawTransaction: undefined,
                   error: undefined,
                   leaseUntil: undefined,
+                  retryAt: undefined,
+                  consecutiveFailures: 0,
                   transactionHash: outcome.transactionHash ?? p.transactionHash,
                 }
               : p,
@@ -411,12 +531,15 @@ export class PaymentProcessor {
         status: "failed",
         error: "Aevum transaction reverted. No payment was settled.",
         leaseUntil: undefined,
+        retryAt: undefined,
+        consecutiveFailures: 0,
         rawTransaction: undefined,
       });
       return;
     }
     if (outcome.status === "not_found" && payment.rawTransaction)
       await this.ports.settlement.broadcast(payment.rawTransaction);
-    await this.patch(payment.id, { leaseUntil: this.now() + 10000 });
+    await this.patch(payment.id, { leaseUntil: undefined, retryAt: this.now() + 10000,
+      consecutiveFailures: 0, error: undefined });
   }
 }

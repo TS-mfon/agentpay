@@ -140,6 +140,19 @@ export async function walletControl(
     );
   return configurePolicy(data, data.policy);
 }
+async function nextPolicyVersion(data: DashboardData): Promise<bigint> {
+  const rpc = createPublicClient({ chain, transport: http(undefined, { timeout: 15000, retryCount: 1 }) });
+  const current = await rpc.readContract({
+    address: data.treasury.id as Address,
+    abi: vaultAbi,
+    functionName: "agentConfig",
+    args: [data.treasury.agentId as `0x${string}`],
+    blockTag: "latest",
+  });
+  const registered = BigInt(data.policy.version);
+  return (current[0] > registered ? current[0] : registered) + 1n;
+}
+
 export async function configurePolicy(
   data: DashboardData,
   policy: Omit<Policy, "version" | "mandateHash">,
@@ -147,6 +160,7 @@ export async function configurePolicy(
   const { wallet, account } = await client();
   if (account.toLowerCase() !== data.treasury.owner.toLowerCase())
     throw new Error("Connect the treasury owner's wallet.");
+  const version = await nextPolicyVersion(data);
   return confirmed(
     await wallet.writeContract({
       account,
@@ -156,8 +170,8 @@ export async function configurePolicy(
       functionName: "configureAgent",
       args: [
         data.treasury.agentId as `0x${string}`,
-        BigInt(data.policy.version + 1),
-        keccak256(toBytes(policy.mandate)),
+        version,
+        keccak256(toBytes(policy.mandate.trim())),
         parseUnits(policy.perPaymentLimit, 6),
         parseUnits(policy.weeklyBudget, 6),
         parseUnits(policy.totalBudget, 6),
@@ -260,7 +274,7 @@ export async function prepareTreasury(
       args: [
         agentId,
         current[0] + 1n,
-        keccak256(toBytes(input.mandate)),
+        keccak256(toBytes(input.mandate.trim())),
         parseUnits(input.perPaymentLimit, 6),
         parseUnits(input.weeklyBudget, 6),
         parseUnits(input.totalBudget, 6),

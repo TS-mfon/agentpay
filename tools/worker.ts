@@ -5,13 +5,29 @@ const batch = Number(process.env.AGENTPAY_WORKER_BATCH || '4');
 if (!Number.isInteger(batch) || batch < 1 || batch > 20) throw new Error('Worker batch must be 1 to 20');
 if (process.env.AGENTPAY_MODE !== 'live') throw new Error('Hosted executor requires explicit live mode');
 if (!process.env.AEVUM_EXECUTOR_PRIVATE_KEY || !process.env.GENLAYER_OPERATOR_PRIVATE_KEY) throw new Error('Worker signing keys are required');
-const { getRuntime } = await import('../src/server/runtime');
+const { getWorkerRuntime } = await import('../src/server/runtime');
 const { runWorkerBatch } = await import('../src/server/worker-runner');
+const { startGovernanceRpcProxy } = await import('../src/server/governance-rpc-proxy');
+const { governanceChain } = await import('../src/integrations/genlayer-network');
+// Terminate the process instead of releasing its lease while an uncancelled SDK operation lives.
+// Signed submissions may already be accepted remotely and must still be reconciled by the next run.
+const watchdog = setTimeout(() => {
+  console.error('AgentPay worker exceeded its time bound; pending submissions require reconciliation.');
+  process.exit(1);
+}, 360000);
+watchdog.unref();
+let proxy: Awaited<ReturnType<typeof startGovernanceRpcProxy>> | undefined;
 try {
-  const runtime = await getRuntime();
+  proxy = await startGovernanceRpcProxy({
+    upstream: process.env.GENLAYER_RPC_URL || governanceChain().rpcUrls.default.http[0],
+  });
+  const runtime = await getWorkerRuntime(proxy.endpoint);
   const processed = await runWorkerBatch(runtime, batch);
   console.log(JSON.stringify({ service:'agentpay', processed, timestamp:new Date().toISOString() }));
 } catch {
   console.error('AgentPay worker failed. Inspect request status and configuration; signing data is never logged.');
   process.exitCode=1;
+} finally {
+  await proxy?.close();
+  clearTimeout(watchdog);
 }

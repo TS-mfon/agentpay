@@ -222,8 +222,13 @@ sequenceDiagram
     API->>DB: Atomically validate, reserve, and record request
     API-->>A: Request ID and queued status
     W->>DB: Acquire work and exact policy snapshot
-    W->>G: Register mandate if needed and evaluate request
-    G-->>W: Decision transaction reference
+    opt Mandate needs registration
+        W->>DB: Persist signed registration envelope and hash
+        W->>G: Broadcast registration and await successful finality
+    end
+    W->>DB: Persist signed evaluation envelope and hash
+    W->>G: Broadcast evaluation using the saved envelope
+    G-->>W: Transaction acknowledgement or recoverable response loss
     W->>G: Inspect successful finalization and bound verdict
     alt Approved and still authorized
         W->>Q: Prepare restricted executePayment transaction
@@ -243,8 +248,10 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> queued: Authenticated request admitted
-    queued --> awaiting_finality: Evaluation submitted
-    evaluating --> awaiting_finality: Interrupted evaluation resumed
+    queued --> evaluating: Registration envelope journaled
+    evaluating --> evaluating: Reconcile saved registration
+    queued --> awaiting_finality: Evaluation envelope journaled
+    evaluating --> awaiting_finality: Registration finalized and evaluation journaled
     awaiting_finality --> awaiting_finality: Await consensus or bounded recovery
     awaiting_finality --> approved: Finalized matching approval
     awaiting_finality --> rejected: Finalized denial
@@ -252,11 +259,13 @@ stateDiagram-v2
     approved --> executing: Signed transaction saved
     executing --> executing: Reconcile or rebroadcast identical bytes
     executing --> settled: Matching successful receipt
-    executing --> failed: Confirmed revert
+    executing --> failed: Confirmed revert or mined receipt needs review
     queued --> expired: Request window elapsed
+    evaluating --> expired: Registration outlived request authority
     awaiting_finality --> expired: Request window elapsed
     approved --> expired: Approval window elapsed
     queued --> failed: Authority or terminal validation failure
+    evaluating --> failed: Registration or retry-budget failure
     awaiting_finality --> failed: Terminal decision failure
     approved --> failed: Authority changed
     settled --> [*]
@@ -265,9 +274,11 @@ stateDiagram-v2
     expired --> [*]
     failed --> [*]
 ```
-`evaluating` is a recognized recovery state; the normal submission path records `awaiting_finality` after receiving the evaluation transaction reference. Network errors can leave a request in its prior pending state with a retry explanation. They do not imply denial or approval.
+`evaluating` records a pending policy registration when registration is needed. The worker saves the signed registration or evaluation envelope and its hash before allowing the SDK to broadcast. An evaluation therefore has a durable `awaiting_finality` reference even if the RPC acknowledgement is lost. Recovery checks that reference and rebroadcasts only the identical signed bytes when the transaction is specifically not found. Network errors do not imply denial or approval.
 
 Requests expire within one hour of creation or at mandate expiry, whichever occurs first. A transaction already prepared/broadcast must be reconciled even if the application request window later expires. Do not create a new purchase key merely because a response timed out.
+
+Financial expiry and chain-write finality are separate. An expired or failed request can retain an unresolved GenLayer reference. The worker continues read-only finality reconciliation for that reference and does not revive its spending authority. New writes to the shared governance contract wait until the earlier write resolves. An uncertain Aevum transfer remains `executing` and reserved until its receipt is reconciled.
 
 ## Treasury contract
 
@@ -331,7 +342,7 @@ Expired unexecuted requests stop reserving funds. Executing transactions retain 
 
 ### Verifiable receipt
 
-A payment is complete only when the successful Aevum transaction and matching vault event have been verified. The worker compares the following fields before marking `settled`:
+A payment is complete only when its successful Aevum receipt contains one matching `PaymentExecuted` event from the expected vault and exactly one official tUSD8 `Transfer` from that vault to the recorded recipient for `amountUnits`. A vault event by itself does not prove token movement. The worker compares the following fields before marking `settled`:
 
 | Recorded request | Receipt / `PaymentExecuted` evidence |
 | --- | --- |
@@ -339,13 +350,15 @@ A payment is complete only when the successful Aevum transaction and matching va
 | `id` | Event `requestId` |
 | `agentId` | Event `agentId` |
 | `policyVersion` | Event `policyVersion` |
-| `recipient` | Event recipient |
-| `amountUnits` | Event integer amount |
+| `recipient` | Vault-event recipient and official tUSD8 transfer destination |
+| `amountUnits` | Vault-event amount and official tUSD8 transfer value |
 | `requestHash` | Event request hash |
 | `decisionRef` | Event decision reference |
 | `transactionHash` | Successful Aevum transaction receipt |
 
 The event also records the authorization epoch. History preserves original purpose/evidence, policy references, decision reasoning, timestamps, and execution status. Authorized API responses exclude raw signed transaction bytes and credentials.
+
+A mined successful transaction whose logs do not prove the requested payment becomes `failed` with its transaction hash and a manual-receipt-review error. This is a verification failure, not a reported revert: tokens may have moved. The worker stops automatic broadcast/re-signing for that mined request and releases the nonce gate. Inspect its actual receipt and token transfers with the owner/operator before creating another purchase key. Unresolved RPC failures remain reconcilable `executing` transactions.
 
 A receipt proves an on-chain payment under the recorded vault restrictions. It does not prove that a merchant's claims were truthful or a service was delivered. Service providers should independently verify the vault, recipient, amount, network, and receipt before granting access.
 
@@ -475,7 +488,7 @@ The [agent skill](skills/agentpay/SKILL.md) teaches purchase selection, stable i
 | `rejected` | Report the reasoning; do not bypass the mandate |
 | Timeout / transport failure | Retrieve the original request or history before resubmission |
 | HTTP 429 / 503 | Back off and retry reads; retain the original payload/key |
-| `failed` / `expired` | Inspect explanation and any transaction reference before a new purchase |
+| `failed` / `expired` | Inspect the explanation and transaction reference; a `failed` record with a hash requires receipt review before another purchase key |
 
 Hosts must handle tool errors before reading a record. See [API reference](docs/api.md) and [MCP guide](mcp/README.md) for maintained field/output contracts and independent receipt checks.
 
@@ -544,7 +557,7 @@ The contract ABI/bytecode artifact is generated from this repository's Solidity 
 | `AEVUM_DEPLOYER_PRIVATE_KEY` | Signing secret | Local deployment only | Contract deployment signer |
 | `AEVUM_OWNER_ADDRESS` | Public address | Local deployment | Owner assigned to a script-deployed vault |
 | `GENLAYER_NETWORK` | Public configuration | App and worker | `studio-dev`; `studio-next` resolves to the Studio development preset |
-| `GENLAYER_RPC_URL` | Public configuration | App and worker | Optional explicit RPC override for the selected governance network |
+| `GENLAYER_RPC_URL` | Public configuration | App and worker | Optional HTTPS upstream for the selected governance network; the worker forwards to it through a temporary local RPC boundary |
 | `GENLAYER_CONTRACT_ADDRESS` | Public address | App and worker | Deployed AgentMandate address |
 | `GENLAYER_OPERATOR_PRIVATE_KEY` | Signing secret | Actions worker / explicit local deployment | Governance operator signer |
 | `AGENTPAY_SERVICES_JSON` | Optional configuration | App | Curated service metadata; never independent permission or verification |
@@ -591,7 +604,13 @@ Create the protected `agentpay-testnet` environment used by [.github/workflows/e
 | `AEVUM_EXECUTOR_ADDRESS` | Expected settlement account |
 | `GENLAYER_CONTRACT_ADDRESS` | Governance contract to evaluate mandates |
 
-The workflow checks bounded work about every five minutes and supports manual dispatch. Scheduled runs use four state-processing operations per run; manual test/recovery dispatch can select 4, 10, or 20. These are state transitions, not a guarantee of completed payments. Governance writes are serialized to preserve the shared governance contract's consistency. Worker/request leases and durable signed-transaction records support recovery across runner termination and retries. The bounded runner closes the MongoDB connection on completion or failure so a finished batch does not keep its hosted process alive.
+The workflow checks bounded work about every five minutes and supports manual dispatch. Scheduled runs use four state-processing operations per run; manual test/recovery dispatch can select 4, 10, or 20. These are state transitions, not a guarantee of completed payments. The runner closes MongoDB and RPC connections on completion or failure.
+
+The [queue scheduler](src/core/queue.ts) expires eligible unexecuted requests without RPC and selects work only when both its ownership lease and `retryAt` are due. A leased request does not hide independent due inspections or reconciliation. New shared-contract governance writes remain serialized while an earlier write is unresolved, and an uncertain executor transaction blocks preparation of another settlement transaction to prevent nonce reuse.
+
+Transient failures use durable exponential backoff from 15 seconds up to five minutes, with request-stable jitter. Six consecutive transient failures exhaust the automatic failure budget for unbroadcast work; normal pending-finality polls do not consume it. Unresolved signed writes retain their recovery journals, and uncertain executing transfers continue reconciliation rather than being declared failed by a timeout. Renewable worker/request ownership leases are 420 seconds. A terminated process can leave its lease in place until expiry; operators must not clear a live lease or uncertain transaction merely to advance the queue.
+
+The [worker RPC boundary](src/server/governance-rpc-proxy.ts) starts a temporary forwarder on `127.0.0.1` inside its own process. It forwards JSON-RPC requests unchanged to the configured HTTPS GenLayer endpoint, sanitizes error details, refuses redirects, bounds request/response bodies to 1 MiB, and aborts upstream request/body I/O after 15 seconds. Its network lifetime is 240 seconds; a 360-second process watchdog bounds SDK waits that outlive network cancellation. This requires no dedicated server and does not replace the web runtime's fetch or environment configuration. Cancellation cannot undo a transaction already accepted remotely, so the signed journal remains the recovery authority.
 
 GitHub scheduling and governance finality can delay requests beyond one schedule interval. The API does not automatically dispatch a run for each submitted request. A pending response should direct the user to status/history, not promise immediate execution. Repeated generic failures, unavailable governance state, or a stalled queue require operator diagnosis.
 
@@ -603,11 +622,14 @@ The same live database and governance/executor settings must be used by Vercel a
 
 ### Recovery rules
 
-- Save signed transaction bytes/hash before broadcast. If the response is lost, reconcile that hash and rebroadcast only the same signed bytes when appropriate.
+- Save both GenLayer and Aevum signed transaction bytes/hash before broadcast. If the response is lost, reconcile that hash and rebroadcast only the same signed bytes when appropriate. Signed payloads, including registration journals, are excluded from API responses.
+- A saved GenLayer registration must reach successful finalized execution before evaluation proceeds, even if a matching policy record is already visible.
+- Treat `retryAt` as the next eligible processing time, not a worker ETA. Inspect the existing request, retry metadata and recorded references before taking recovery action; retain the original purchase key.
 - Inspect finalized successful governance transactions and their request/version/hash bindings. Never authorize an unavailable record or malformed verdict.
 - Bound missing-decision recovery and preserve every evaluation reference. Do not replace the purchase ID or policy snapshot during recovery.
 - Revalidate authority and policy before preparation/broadcast. Pause, revocation, expiry, ownership change, or policy change can stop pending work.
 - Do not remove a transaction's reservation merely because the API request expired while it was executing.
+- A `failed` status does not by itself prove that no tokens moved. A mined receipt-verification failure keeps its transaction hash for manual review and is never automatically rebroadcast or re-signed.
 
 ## Security and trust model
 
@@ -639,8 +661,9 @@ Do not submit personal addresses, children's names, bank credentials, unredacted
 | --- | --- |
 | Cross-chain authorization | Trusted executor attestation; no cryptographic GenLayer proof checked by Aevum |
 | Governance persistence | Studio development state may reset; deployments and references must be rechecked |
+| Governance signing recovery | Signed-envelope journaling supports Studio references; this deployment uses chain `61997`. Other network presets need their own reference-recovery integration |
 | Execution latency | Asynchronous Actions scheduling and finality; no immediate-payment SLA |
-| Queue throughput | Serialized governance and bounded batches; stalled work can affect later requests |
+| Queue throughput | Due independent work can progress, but unresolved shared-governance writes and uncertain executor nonces still gate new writes; batches and scheduling remain bounded |
 | Application persistence | CAS-versioned aggregate ledger; a bounded prototype, not a high-throughput ledger |
 | History capacity | 1000 stored requests across the prototype; no server-side cursor pagination or archival service |
 | Merchant identity | Owner-approved addresses; no independent merchant/invoice verification |
@@ -667,7 +690,7 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 npm run verify:network
 ```
-Install the Python requirements before `check:genlayer`. The network command performs read-only checks of the configured Aevum chain/token; it does not fabricate deployment or settlement evidence.
+Install the Python requirements before `check:genlayer`. Browser tests use the production build: run `npm run build` before `npm run test:e2e`. The network command performs read-only checks of the configured Aevum chain/token; it does not fabricate deployment or settlement evidence.
 
 | Suite | Coverage of behavior |
 | --- | --- |

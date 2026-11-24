@@ -58,11 +58,27 @@ Service, purpose, mandate and evidence enter GenLayer transaction arguments. Tre
 
 The request binds treasury ID, agent ID, stable purchase key, exact normalized purchase fields, mandate hash and policy version. An identical payload/key returns the same request. A changed purchase or applicable policy under the same key produces `IDEMPOTENCY_CONFLICT`. A new key can create a second payment; it is not a retry mechanism.
 
-Main lifecycle: `queued` → `awaiting_finality` → `approved` → `executing` → `settled`. `evaluating` is also pending. `rejected` and `needs_information` never authorize settlement. Failed and expired requests remain inspectable. Accepted GenLayer consensus is insufficient: the worker requires finalized successful consensus and matching request/mandate/version references.
+Main lifecycle: `queued` → `awaiting_finality` → `approved` → `executing` → `settled`. A mandate that needs registration also passes through `evaluating`. The worker journals the signed GenLayer registration/evaluation envelope and hash before broadcast; losing the RPC response cannot erase that submitted identity. `rejected` and `needs_information` never authorize settlement. Failed and expired requests remain inspectable. Accepted GenLayer consensus is insufficient: the worker requires finalized successful consensus and matching request/mandate/version references.
 
-GitHub Actions normally checks every five minutes, with variable scheduling and finality latency. Requests expire within one hour or at mandate expiry, whichever is earlier. The API does not publish guaranteed next-run or worker-health metadata. Escalate persistent lack of progress using the request ID, status, attempts, expiry and error; do not invent a payment ETA.
+GitHub Actions normally checks every five minutes, with variable scheduling and finality latency. Requests expire within one hour or at mandate expiry, whichever is earlier. REST status/history may include the additive processing metadata below. These fields describe eligibility and recovery state; they do not provide a guaranteed next run, settlement ETA or worker-health heartbeat. Older records may omit them.
 
-Signed bytes and their transaction hash are saved before broadcast. Recovery reconciles that transaction and rebroadcasts only identical bytes when appropriate. An unresolved submitted transaction may still settle after local expiry; its funds remain committed until reconciliation resolves it.
+| Optional field | Meaning |
+| --- | --- |
+| `retryAt` | Unix milliseconds when another processing attempt becomes eligible; the Actions schedule can run later |
+| `lastAttemptAt` | Unix milliseconds when the worker last claimed this request |
+| `consecutiveFailures` | Consecutive processing failures; ordinary pending-finality responses reset this counter |
+| `leaseUntil` | Unix milliseconds until the current processing ownership lease expires; clients must not treat it as permission to submit a duplicate |
+| `governanceUnresolved` | A signed or known GenLayer write still needs finality reconciliation; may remain true after financial expiry or a failed request |
+
+Escalate persistent lack of progress using the request ID, status, attempts, expiry, retry metadata and error. `attempts` counts claimed state-processing operations, not only failed RPC retries.
+
+The MCP adapter returns its advertised output schema. Hosts must not assume that every additive REST metadata field is also present in MCP results.
+
+Signed GenLayer and Aevum bytes and their transaction hashes are saved before broadcast. Recovery reconciles the existing transaction and rebroadcasts only identical bytes when appropriate. GenLayer signing recovery currently uses Studio envelope references on governance chain `61997`; a saved registration must finalize successfully before evaluation continues. Credentials, raw execution/evaluation bytes, and raw registration journals are never returned to API clients. An unresolved submitted Aevum transaction may still settle after local expiry; its funds remain committed until reconciliation resolves it.
+
+The worker sweeps eligible expired unexecuted requests without RPC. It selects due independent work while preserving two write gates: an unresolved shared-governance write blocks newer governance submissions, and an uncertain executing transfer blocks another settlement preparation with the same signer. Failed or expired unresolved governance records are polled read-only until finality is known; they are never revived as payment approvals.
+
+Transient failures use a 15-second-to-five-minute exponential backoff with request-stable jitter. Six consecutive failures exhaust automatic retries for unbroadcast work. Ordinary pending-finality polls do not consume that budget, and an uncertain `executing` transaction is not marked failed merely because an RPC timeout or retry limit occurred. Preserve its original reference and wait for reconciliation or operator diagnosis.
 
 Poll every 15-30 seconds with backoff. A timeout can occur after acceptance. Retrieve the original request or inspect history before retrying; if its ID is lost, retry only the exact saved payload/key. REST history has no cursor or key-search endpoint. MCP's 1-100 limit is a local slice of the bounded history.
 
@@ -87,16 +103,18 @@ History/status includes purchase fields, `treasuryId`, `agentId`, policy version
 
 | Payment record | Verification |
 | --- | --- |
-| `transactionHash` | Successful Aevum receipt on chain 44005 |
+| `transactionHash` | Aevum transaction reference; a `settled` record requires a successful matching receipt on chain 44005 |
 | `treasuryId` | Contract emitting the `PaymentExecuted` event and source vault |
 | `id` | Event `requestId` |
 | `agentId`, `policyVersion` | Matching event fields |
-| `recipient` | Event recipient and token-transfer destination |
-| `amountUnits` | Exact event amount; tUSD8 has six decimals |
+| `recipient` | Vault-event recipient and official tUSD8 `Transfer.to` |
+| `amountUnits` | Exact vault-event amount and official tUSD8 `Transfer.value`; tUSD8 has six decimals |
 | `requestHash`, `decisionRef` | Matching event request hash and GenLayer evaluation reference |
 | `mandateHash`, `policyVersion`, `requestHash` | Matching finalized GenLayer decision and historical policy |
 
-Use `https://explorer-test.qday.info/tx/<transactionHash>` or trusted Aevum JSON-RPC at `https://rpc-test.qday.info`. tUSD8 is `0x456569838f1d43009A91ebA4263147Afd7233483`. The backend verifies event bindings before marking settled. MCP returns the record and references; it does not independently fetch or cryptographically verify the Aevum receipt. State when verification is backend-reported. A transfer receipt does not prove merchant identity, service quality or delivery.
+Use `https://explorer-test.qday.info/tx/<transactionHash>` or trusted Aevum JSON-RPC at `https://rpc-test.qday.info`. tUSD8 is `0x456569838f1d43009A91ebA4263147Afd7233483`. Before marking `settled`, the backend requires one matching `PaymentExecuted` event from the expected vault and exactly one `Transfer` emitted by that official token from the vault to the recorded recipient for `amountUnits`. MCP returns the record and references; it does not independently fetch or cryptographically verify the Aevum receipt. State when verification is backend-reported. A transfer receipt does not prove merchant identity, service quality or delivery.
+
+The adapter's internal `verification_failed` result is represented publicly as `status: "failed"`, preserving `transactionHash` and an error requesting receipt review. It means a mined successful transaction lacked matching payment proof, not that it reverted or that no tokens moved. This known mined request is not automatically rebroadcast or re-signed. Verify its receipt and actual token transfers with the owner/operator before submitting another purchase with a new key. RPC uncertainty remains `executing` and continues reconciliation; a confirmed revert has its separate error explanation.
 
 ## Owner pages and APIs
 

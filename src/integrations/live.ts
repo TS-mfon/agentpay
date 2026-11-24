@@ -16,7 +16,7 @@ const serviceSchema = z
     }),
   )
   .max(30);
-export function createLivePorts(): Ports {
+export function createLivePorts(options: { genlayerEndpoint?: string } = {}): Ports {
   if (
     !process.env.AEVUM_EXECUTOR_ADDRESS ||
     !isAddress(process.env.AEVUM_EXECUTOR_ADDRESS)
@@ -26,7 +26,7 @@ export function createLivePorts(): Ports {
     JSON.parse(process.env.AGENTPAY_SERVICES_JSON || "[]"),
   );
   return {
-    governance: createGenLayerGovernance(),
+    governance: createGenLayerGovernance({ endpoint: options.genlayerEndpoint }),
     settlement: createAevumSettlement(),
     services,
   };

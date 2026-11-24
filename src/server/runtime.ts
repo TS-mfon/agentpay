@@ -14,7 +14,7 @@ export interface Runtime {
   auth: OwnerAuth;
 }
 let runtime: Promise<Runtime> | undefined;
-async function createRuntime(): Promise<Runtime> {
+async function createRuntime(options: { genlayerEndpoint?: string } = {}): Promise<Runtime> {
   const configured = process.env.AGENTPAY_MODE ?? "live";
   if (configured !== "demo" && configured !== "live")
     throw new AppError(
@@ -51,7 +51,7 @@ async function createRuntime(): Promise<Runtime> {
   const ports =
     mode === "demo"
       ? demoPorts()
-      : (await import("../integrations/live")).createLivePorts();
+      : (await import("../integrations/live")).createLivePorts(options);
   return {
     mode,
     store,
@@ -65,4 +65,12 @@ export function getRuntime() {
     throw error;
   });
   return runtime;
+}
+
+/** A worker owns its RPC proxy and database lifecycle; it does not change the shared web runtime. */
+export function getWorkerRuntime(genlayerEndpoint: string): Promise<Runtime> {
+  const endpoint = new URL(genlayerEndpoint);
+  if (endpoint.protocol !== "http:" || endpoint.hostname !== "127.0.0.1" || !endpoint.port)
+    throw new Error("Worker governance endpoint must be its local RPC proxy.");
+  return createRuntime({ genlayerEndpoint });
 }

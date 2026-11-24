@@ -65,6 +65,12 @@ export interface Payment extends PaymentInput {
   status: PaymentStatus;
   attempts: number;
   leaseUntil?: number;
+  retryAt?: number;
+  consecutiveFailures?: number;
+  lastAttemptAt?: number;
+  governanceUnresolved?: boolean;
+  rawGovernanceTransaction?: string;
+  policyRegistration?: { reference: string; rawTransaction: string };
   decisionRef?: string;
   evaluationReferences?: string[];
   evaluationRecoveryAttempts?: number;

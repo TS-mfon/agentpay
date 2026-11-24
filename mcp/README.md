@@ -29,9 +29,11 @@ Read mandate and treasury first. Use `availableBalance` and, when returned, `spe
 
 Persist the exact purchase body and a stable idempotency key before calling the request tool. The request response is not settlement. Poll existing request IDs every 15-30 seconds with backoff. If a submission response is lost, recover from history or resend the exact persisted body/key. A new key creates a new purchase and may duplicate a payment. No cursor pagination or idempotency-key search endpoint exists.
 
+If a record is `failed` and contains `transactionHash`, preserve its request/key/hash and have the owner/operator verify the actual receipt and token transfers before another purchase key. A successful mined receipt can lack matching payment proof; the public record then says `failed` with a receipt-review error. This does not prove a revert or absence of token movement. The worker stops automatic rebroadcast/re-signing for that mined request. Network-unknown transactions remain `executing` and continue reconciliation.
+
 The worker normally checks every five minutes, but scheduling and finality may take additional runs. MCP exposes no worker-health heartbeat or guaranteed next-run timestamp. Escalate a request that remains stalled across repeated expected cycles using its ID, state, attempts and expiry; do not invent a payment ETA. A network error can occur after a request was accepted.
 
-Status `settled` supplies `transactionHash`, `treasuryId`, `agentId`, `id`, `recipient`, `amountUnits`, `policyVersion`, `requestHash`, `mandateHash`, and `decisionRef`. See [the skill's receipt map](../skills/agentpay/SKILL.md#receipt-field-map) and `/docs#receipts`. The backend validates settlement events; this adapter does not independently query Aevum receipts. Use trusted explorer/RPC reads for independent verification, and state when only backend-reported verification is available.
+Status `settled` supplies `transactionHash`, `treasuryId`, `agentId`, `id`, `recipient`, `amountUnits`, `policyVersion`, `requestHash`, `mandateHash`, and `decisionRef`. See [the skill's receipt map](../skills/agentpay/SKILL.md#receipt-field-map) and `/docs#receipts`. The backend requires a successful receipt with one matching vault `PaymentExecuted` event plus exactly one official tUSD8 `Transfer` from that vault to the recipient for `amountUnits`; this adapter does not independently query Aevum receipts. Use trusted explorer/RPC reads for independent verification, and state when only backend-reported verification is available.
 
 ## Boundaries and evidence
 

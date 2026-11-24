@@ -46,7 +46,8 @@ const policyFor = (s: State, t: Treasury) =>
   s.policies.find(
     (p) => sameAddress(p.treasuryId, t.id) && p.version === t.policyVersion,
   );
-const safePayment = ({ rawTransaction: _raw, ...payment }: Payment) =>
+const safePayment = ({ rawTransaction: _raw, rawGovernanceTransaction: _governanceRaw,
+  policyRegistration: _registration, ...payment }: Payment) =>
   payment as Payment;
 
 export class AgentPayService {

@@ -19,7 +19,7 @@ export default defineConfig({
       : undefined,
   },
   webServer: externalPreview ? undefined : {
-    command: "npm run dev -- --port 3000",
+    command: "npm run start -- --port 3000",
     url: baseURL + "/api/owner/dashboard",
     reuseExistingServer: !process.env.CI,
     env: {

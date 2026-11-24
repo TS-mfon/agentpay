@@ -29,9 +29,17 @@ export interface VaultSnapshot {
   totalSpent: string;
   week?: number;
 }
+export interface SignedGovernanceTransaction {
+  reference: string;
+  rawTransaction: string;
+}
+export interface GovernanceSubmission {
+  onPrepared?: (transaction: SignedGovernanceTransaction) => Promise<void>;
+  prepared?: SignedGovernanceTransaction;
+}
 export interface Governance {
-  register(policy: Policy): Promise<void>;
-  submit(policy: Policy, payment: Payment): Promise<string>;
+  register(policy: Policy, options?: GovernanceSubmission): Promise<void>;
+  submit(policy: Policy, payment: Payment, options?: GovernanceSubmission): Promise<string>;
   inspect(reference: string, payment: Payment): Promise<PolicyDecision>;
 }
 export interface Settlement {
@@ -42,8 +50,9 @@ export interface Settlement {
   ): Promise<{ hash: string; rawTransaction: string }>;
   broadcast(rawTransaction: string): Promise<string>;
   reconcile(payment: Payment): Promise<{
-    status: "settled" | "pending" | "not_found" | "failed";
+    status: "settled" | "pending" | "not_found" | "failed" | "verification_failed";
     transactionHash?: string;
+    reason?: string;
   }>;
 }
 export interface Ports {

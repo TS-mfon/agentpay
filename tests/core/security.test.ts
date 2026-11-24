@@ -376,7 +376,7 @@ describe("finality and settlement recovery", () => {
     expect(
       (await service.getPayment(owner, request.id)).rawTransaction,
     ).toBeUndefined();
-    advance(11000);
+    advance(20000);
     await service.processBatch(10);
     expect((await service.getPayment(owner, request.id)).status).toBe(
       "settled",
@@ -432,7 +432,7 @@ describe("finality and settlement recovery", () => {
     const request = await service.requestPayment(owner, input);
     await service.processBatch(10);
     expect((await service.getPayment(owner, request.id)).status).toBe("queued");
-    advance(16000);
+    advance(20000);
     await service.processBatch(10);
     expect((await service.getPayment(owner, request.id)).status).toBe(
       "settled",

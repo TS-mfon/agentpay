@@ -7,8 +7,10 @@ import {
   keccak256,
   isAddress,
   isHex,
+  decodeEventLog,
   type Hex,
   type Address,
+  type Log,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Payment, Treasury } from "../core/types";
@@ -26,6 +28,52 @@ const bytes32 = (value: string): Hex => {
     throw new Error("Invalid on-chain request reference");
   return value as Hex;
 };
+type ReceiptLog = Pick<Log, "address" | "data" | "topics">;
+interface PaymentEvent {
+  requestId: Hex;
+  recipient: Address;
+  amount: bigint;
+  requestHash: Hex;
+  policyVersion: bigint;
+  agentId: Hex;
+  decisionRef: Hex;
+}
+function matchesVaultRecord(logs: readonly ReceiptLog[], payment: Payment): boolean {
+  const events = logs
+    .filter(log => log.address.toLowerCase() === payment.treasuryId.toLowerCase())
+    .flatMap(log => {
+      try {
+        const event = decodeEventLog({ abi: vaultAbi, data: log.data, topics: log.topics });
+        return event.eventName === "PaymentExecuted" ? [event.args as PaymentEvent] : [];
+      } catch { return []; }
+    });
+  if (events.length !== 1) return false;
+  const args = events[0];
+  return args.requestId === payment.id && args.requestHash === payment.requestHash &&
+    args.agentId === payment.agentId && args.policyVersion === BigInt(payment.policyVersion) &&
+    args.decisionRef === payment.decisionRef &&
+    args.recipient.toLowerCase() === payment.recipient.toLowerCase() &&
+    args.amount === BigInt(payment.amountUnits);
+}
+function matchesTokenTransfer(logs: readonly ReceiptLog[], payment: Payment): boolean {
+  const transfers = logs
+    .filter(log => log.address.toLowerCase() === TUSD8_ADDRESS.toLowerCase())
+    .flatMap(log => {
+      try {
+        const event = decodeEventLog({ abi: erc20Abi, data: log.data, topics: log.topics });
+        return event.eventName === "Transfer"
+          ? [event.args as { from: Address; to: Address; value: bigint }] : [];
+      } catch { return []; }
+    })
+    .filter(args => args.from.toLowerCase() === payment.treasuryId.toLowerCase());
+  return transfers.length === 1 &&
+    transfers[0].to.toLowerCase() === payment.recipient.toLowerCase() &&
+    transfers[0].value === BigInt(payment.amountUnits);
+}
+function verifiesPaymentReceipt(logs: readonly ReceiptLog[], payment: Payment): boolean {
+  try { return matchesVaultRecord(logs, payment) && matchesTokenTransfer(logs, payment); }
+  catch { return false; }
+}
 export function createAevumSettlement(): Settlement {
   const rpc = process.env.AEVUM_RPC_URL || aevum.rpcUrls.default.http[0];
   if (!rpc.startsWith("https://") && process.env.NODE_ENV === "production")
@@ -198,47 +246,12 @@ export function createAevumSettlement(): Settlement {
           });
           if (receipt.status !== "success")
             return { status: "failed" as const, transactionHash: hash };
-          const { decodeEventLog } = await import("viem");
-          const matches = receipt.logs
-            .filter(
-              (log) =>
-                log.address.toLowerCase() === payment.treasuryId.toLowerCase(),
-            )
-            .some((log) => {
-              try {
-                const event = decodeEventLog({
-                  abi: vaultAbi,
-                  data: log.data,
-                  topics: log.topics,
-                });
-                if (event.eventName !== "PaymentExecuted") return false;
-                const args = event.args as {
-                  requestId: Hex;
-                  recipient: Address;
-                  amount: bigint;
-                  requestHash: Hex;
-                  policyVersion: bigint;
-                  agentId: Hex;
-                  decisionRef: Hex;
-                };
-                return (
-                  args.requestId === payment.id &&
-                  args.requestHash === payment.requestHash &&
-                  args.agentId === payment.agentId &&
-                  args.policyVersion === BigInt(payment.policyVersion) &&
-                  args.decisionRef === payment.decisionRef &&
-                  args.recipient.toLowerCase() ===
-                    payment.recipient.toLowerCase() &&
-                  args.amount === BigInt(payment.amountUnits)
-                );
-              } catch {
-                return false;
-              }
-            });
-          if (!matches)
-            throw new Error(
-              "Successful transaction did not emit the expected payment receipt",
-            );
+          if (!verifiesPaymentReceipt(receipt.logs, payment))
+            return {
+              status: "verification_failed" as const,
+              transactionHash: hash,
+              reason: "Mined Aevum receipt does not prove the requested tUSD8 payment. Token movement may have occurred; review this transaction before retrying.",
+            };
           return { status: "settled" as const, transactionHash: hash };
         } catch (error) {
           if (

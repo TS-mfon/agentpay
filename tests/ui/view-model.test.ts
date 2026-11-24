@@ -7,8 +7,25 @@ import {
   statusLabel,
   policyPayload,
 } from "../../src/components/view-model";
+import { policySchema } from "../../src/core/validation";
 
 describe("payment presentation", () => {
+  it("normalizes copied mandate whitespace exactly like server validation without changing the source", () => {
+    const source = {
+      mandate: "\n  Research services only\nProvider evidence required. \r\n",
+      perPaymentLimit: "10",
+      weeklyBudget: "40",
+      totalBudget: "200",
+      validUntil: 2000000000,
+      recipients: ["0x2222222222222222222222222222222222222222"],
+    };
+    const payload = policyPayload(source);
+    expect(payload.mandate).toBe("Research services only\nProvider evidence required.");
+    expect(payload.mandate).toBe(policySchema.parse(source).mandate);
+    expect(source.mandate).toBe("\n  Research services only\nProvider evidence required. \r\n");
+    expect(payload.perPaymentLimit).toBe(source.perPaymentLimit);
+    expect(payload.recipients).toEqual(source.recipients);
+  });
   it("whitelists mandate fields without leaking runtime ownership metadata", () => {
     const source = {
       version: 2,

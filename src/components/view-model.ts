@@ -80,7 +80,7 @@ export function policyPayload(
   policy: Omit<Policy, "version" | "mandateHash">,
 ): Omit<Policy, "version" | "mandateHash"> {
   return {
-    mandate: policy.mandate,
+    mandate: policy.mandate.trim(),
     perPaymentLimit: policy.perPaymentLimit,
     weeklyBudget: policy.weeklyBudget,
     totalBudget: policy.totalBudget,

@@ -3,6 +3,7 @@ import {
   encodeAbiParameters,
   encodeEventTopics,
   parseAbiParameters,
+  erc20Abi,
 } from "viem";
 const client = vi.hoisted(() => ({
   getChainId: vi.fn(),
@@ -62,6 +63,17 @@ const payment: Payment = {
   status: "executing",
   attempts: 1,
 };
+function transfer(from = vault, to = recipient, amount = 4000000n, token: string = TUSD8_ADDRESS) {
+  return {
+    address: token,
+    topics: encodeEventTopics({
+      abi: erc20Abi,
+      eventName: "Transfer",
+      args: { from: from as `0x${string}`, to: to as `0x${string}` },
+    }),
+    data: encodeAbiParameters(parseAbiParameters("uint256"), [amount]),
+  };
+}
 function receipt(decision = TX) {
   return {
     status: "success",
@@ -88,6 +100,7 @@ function receipt(decision = TX) {
           ],
         ),
       },
+      transfer(),
     ],
   };
 }
@@ -180,11 +193,68 @@ describe("Aevum settlement isolation and receipts", () => {
       transactionHash: TX,
     });
   });
+  it("does not settle an ABI-compatible vault event without a real official-token transfer", async () => {
+    const valid = receipt();
+    client.getTransactionReceipt.mockResolvedValue({ ...valid, logs: [valid.logs[0]] });
+    expect(await createAevumSettlement().reconcile(payment)).toMatchObject({
+      status: "verification_failed",
+      transactionHash: TX,
+    });
+    expect(client.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["different token emitter", () => [transfer(vault, recipient, 4000000n, owner)]],
+    ["different source", () => [transfer(owner)]],
+    ["different recipient", () => [transfer(vault, owner)]],
+    ["different amount", () => [transfer(vault, recipient, 3999999n)]],
+    ["duplicate outgoing transfer", () => [transfer(), transfer()]],
+    ["conflicting extra outgoing transfer", () => [transfer(), transfer(vault, owner, 1n)]],
+  ] as const)("rejects token proof with %s", async (_label, transfers) => {
+    const valid = receipt();
+    client.getTransactionReceipt.mockResolvedValue({ ...valid, logs: [valid.logs[0], ...transfers()] });
+    expect(await createAevumSettlement().reconcile(payment)).toMatchObject({
+      status: "verification_failed", transactionHash: TX,
+    });
+    expect(client.getTransaction).not.toHaveBeenCalled();
+    expect(client.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it("reports a mined token transfer with no vault receipt without claiming a revert or retrying it", async () => {
+    client.getTransactionReceipt.mockResolvedValue({ status: "success", logs: [transfer()] });
+    const outcome = await createAevumSettlement().reconcile(payment);
+    expect(outcome).toMatchObject({ status: "verification_failed", transactionHash: TX });
+    expect(outcome.reason).toContain("Token movement may have occurred");
+    expect(client.getTransaction).not.toHaveBeenCalled();
+    expect(client.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it("rejects duplicated or conflicting vault payment records even with a real token transfer", async () => {
+    const valid = receipt();
+    client.getTransactionReceipt.mockResolvedValue({ ...valid, logs: [...valid.logs, receipt(H).logs[0]] });
+    expect((await createAevumSettlement().reconcile(payment)).status).toBe("verification_failed");
+  });
+  it.each([
+    ["id", H], ["requestHash", R], ["agentId", R],
+    ["policyVersion", 2], ["recipient", owner], ["amountUnits", "4000001"],
+  ] as const)("requires the recorded %s to match the vault event", async (field, value) => {
+    client.getTransactionReceipt.mockResolvedValue(receipt());
+    expect((await createAevumSettlement().reconcile({ ...payment, [field]: value })).status)
+      .toBe("verification_failed");
+  });
+  it("requires the payment record emitter to be this vault", async () => {
+    const valid = receipt();
+    client.getTransactionReceipt.mockResolvedValue({ ...valid, logs: [{ ...valid.logs[0], address: owner }, valid.logs[1]] });
+    expect((await createAevumSettlement().reconcile(payment)).status).toBe("verification_failed");
+  });
+  it("allows unrelated token transfers without confusing them with this vault's unique outgoing payment", async () => {
+    const valid = receipt();
+    client.getTransactionReceipt.mockResolvedValue({ ...valid, logs: [...valid.logs, transfer(owner, recipient, 1n)] });
+    expect((await createAevumSettlement().reconcile(payment)).status).toBe("settled");
+  });
   it("rejects receipt with another decision reference", async () => {
     client.getTransactionReceipt.mockResolvedValue(receipt(H));
-    await expect(createAevumSettlement().reconcile(payment)).rejects.toThrow(
-      "expected payment receipt",
-    );
+    expect(await createAevumSettlement().reconcile(payment)).toMatchObject({
+      status: "verification_failed", transactionHash: TX,
+    });
+    expect(client.sendRawTransaction).not.toHaveBeenCalled();
   });
   it("reports reverted transactions without claiming payment", async () => {
     client.getTransactionReceipt.mockResolvedValue({ status: "reverted" });

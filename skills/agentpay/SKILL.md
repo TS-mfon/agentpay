@@ -64,22 +64,24 @@ REST and successful MCP results use `{success: true, data: ...}`. MCP provides t
 | `rejected` | Report `decisionReason`; do not disguise the purchase to bypass policy |
 | `needs_information` | Obtain the missing evidence; a revised purchase uses a new key and does not amend the old request |
 | `expired` | Inspect old transaction/status and current authority before considering a new purchase |
-| `failed` | Inspect `error` and any saved transaction reference; escalate unresolved execution to the operator |
+| `failed` | Inspect `error`. If `transactionHash` exists, verify its actual receipt/transfers with the owner/operator before another purchase key; tokens may have moved |
+
+For `failed` with a transaction hash, complete receipt reconciliation before another submission. A successful mined receipt can fail the application's payment-proof checks; that does not mean the transaction reverted or no tokens moved. Preserve the original request/key/hash, inspect the official token transfers, and obtain owner/operator confirmation of the outcome. The worker does not automatically rebroadcast or re-sign that mined request. A new key can duplicate token movement even though the old record says `failed`.
 
 On `RECIPIENT_NOT_ALLOWED`, read the approved addresses and confirm the payee. On `INSUFFICIENT_BALANCE`, check pending commitments and ask the owner to fund or wait. On payment/weekly/lifetime caps, do not split a purchase to evade authority. On 401, obtain a current credential; rotation invalidates its predecessor. Revocation, pause, and expired policy cannot be bypassed with favorable AI reasoning.
 
 ## Receipt field map
 
-A MCP status record supplies references; MCP does not independently query the Aevum receipt. The backend checks settlement events before marking `settled`. For independent verification, use the official explorer or the host's trusted Aevum RPC tooling at `https://rpc-test.qday.info` on chain 44005. If no such read tool is available, disclose that verification remains backend-reported; do not claim independent proof.
+A MCP status record supplies references; MCP does not independently query the Aevum receipt. Before marking `settled`, the backend requires a successful receipt with one matching vault `PaymentExecuted` event and exactly one official tUSD8 `Transfer` from that vault to the recorded recipient for `amountUnits`. For independent verification, use the official explorer or the host's trusted Aevum RPC tooling at `https://rpc-test.qday.info` on chain 44005. If no such read tool is available, disclose that verification remains backend-reported; obtain owner/operator receipt review when a failed record has a hash.
 
 | Record field | Compare with |
 | --- | --- |
-| `transactionHash` | Successful Aevum transaction receipt |
+| `transactionHash` | For `settled`: successful Aevum receipt with matching payment proof; a hash alone is insufficient |
 | `treasuryId` | Address emitting `PaymentExecuted` and source vault of the tUSD8 transfer |
 | `id` | Event `requestId`; this is not a transaction hash |
 | `agentId`, `policyVersion` | Matching event fields |
-| `recipient` | Event recipient and token-transfer destination |
-| `amountUnits` | Event integer amount; `amount` × 1000000 with exact decimal arithmetic |
+| `recipient` | Vault-event recipient and official tUSD8 `Transfer.to` |
+| `amountUnits` | Vault-event amount and official tUSD8 `Transfer.value`; `amount` × 1000000 with exact decimal arithmetic |
 | `requestHash`, `decisionRef` | Matching event request hash and GenLayer evaluation transaction reference |
 | `mandateHash`, `policyVersion`, `requestHash` | Matching finalized successful GenLayer decision and historical mandate |
 
