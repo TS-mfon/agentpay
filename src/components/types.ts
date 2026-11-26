@@ -67,6 +67,7 @@ export interface Service {
 export interface DashboardData {
   mode: "demo" | "live";
   owner: string;
+  ownerAccountType?: "wallet" | "smart";
   treasury: Treasury;
   policy: Policy;
   payments: Payment[];
@@ -92,6 +93,8 @@ export interface AgentCard extends Treasury {
 export interface AgentsData {
   mode: "demo" | "live";
   owner: string;
+  ownerAccountType?: "wallet" | "smart";
+  ownerSigner?: string;
   agents: AgentCard[];
   unavailable?: UnavailableAgent[];
 }

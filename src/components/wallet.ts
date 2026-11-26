@@ -32,15 +32,15 @@ const vaultAbi = parseAbi([
   "function revokeAgent(bytes32 agentId)",
   "function configureAgent(bytes32 agentId,uint256 policyVersion,bytes32 mandateHash,uint256 perPaymentLimit,uint256 weeklyBudget,uint256 totalBudget,uint256 validUntil,address[] recipients)",
 ]);
-function provider(): EIP1193Provider {
+export function browserWalletProvider(): EIP1193Provider {
   const ethereum = (window as unknown as { ethereum?: EIP1193Provider })
     .ethereum;
   if (!ethereum)
     throw new Error("Install a browser wallet to connect to Aevum Testnet.");
   return ethereum;
 }
-async function client() {
-  const wallet = createWalletClient({ chain, transport: custom(provider()) });
+export async function connectBrowserWallet() {
+  const wallet = createWalletClient({ chain, transport: custom(browserWalletProvider()) });
   const [account] = await wallet.requestAddresses();
   if (!account) throw new Error("Select a wallet account to continue.");
   try {
@@ -53,7 +53,7 @@ async function client() {
   return { wallet, account };
 }
 export async function connectOwner(): Promise<string> {
-  const { wallet, account } = await client();
+  const { wallet, account } = await connectBrowserWallet();
   const challenge = await api<{ nonce: string; message: string }>(
     `/api/auth/nonce?address=${account}`,
   );
@@ -82,7 +82,7 @@ export async function walletControl(
   action: OwnerAction,
   amount?: string,
 ): Promise<string> {
-  const { wallet, account } = await client();
+  const { wallet, account } = await connectBrowserWallet();
   if (account.toLowerCase() !== data.treasury.owner.toLowerCase())
     throw new Error("Connect the treasury owner's wallet.");
   const common = {
@@ -157,7 +157,7 @@ export async function configurePolicy(
   data: DashboardData,
   policy: Omit<Policy, "version" | "mandateHash">,
 ): Promise<string> {
-  const { wallet, account } = await client();
+  const { wallet, account } = await connectBrowserWallet();
   if (account.toLowerCase() !== data.treasury.owner.toLowerCase())
     throw new Error("Connect the treasury owner's wallet.");
   const version = await nextPolicyVersion(data);
@@ -198,7 +198,7 @@ export async function prepareTreasury(
   progress: (message: string) => void,
   onVaultCreated?: (address: string) => void,
 ): Promise<string> {
-  const { wallet, account } = await client();
+  const { wallet, account } = await connectBrowserWallet();
   const config = await api<{
     mode: string;
     token: string;

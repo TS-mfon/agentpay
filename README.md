@@ -110,6 +110,8 @@ Owners can register several separate agent vaults. The app binds one agent ident
 
 Creating a new vault and authorizing its agent are separate wallet transactions. If creation succeeds but configuration is interrupted, retain the created vault address and continue with that existing vault. Funding is separate from a budget: a 40 tUSD8 budget does not deposit 40 tUSD8.
 
+When a live preview enables `AGENTPAY_SMART_ACCOUNTS=true`, **Create smart account** derives an Aevum account for the connected browser wallet. Send tQDAY to the displayed address, then activate it and sign in. The browser wallet pays tQDAY to deploy a fresh vault with that smart account as owner. The smart account pays tQDAY for each owner operation. Send tUSD8 to the smart account before using **Add funds**. Withdrawals return tUSD8 to the smart account. **Resume treasury** unpauses the vault and renews its mandate in one UserOperation. [QDay ERC-4337 guide](https://wiki.qday.info/Knowledge/technical/developer-guide/erc-4337-development/)
+
 The owner selects an agent before using the payment console or history. The console uses its approved recipients; a catalog entry is not permission to pay an otherwise unapproved address. Owners can fund or withdraw, update mandates, rotate credentials, pause a vault, or revoke an agent from its own page.
 
 Agents retrieve their own treasury and policy, submit purpose/evidence with a stable purchase key, and follow the request until a terminal status. A successful submission means the request was recorded. It does not mean a payment was approved or settled.
@@ -164,7 +166,7 @@ flowchart TB
     Record -->|receipt verification| Worker
     Ledger --> API
 ```
-The API records work durably rather than holding a Vercel request open for consensus. Atlas makes request identity, policy references, and execution recovery available across independent serverless invocations and runner processes. GitHub Actions submits governance and settlement transactions with separate signing keys. The owner wallet administers the vault directly.
+The API records work durably rather than holding a Vercel request open for consensus. Atlas makes request identity, policy references, and execution recovery available across independent serverless invocations and runner processes. GitHub Actions submits governance and settlement transactions with separate signing keys. Owners can administer vaults through a browser wallet or an Aevum smart account.
 
 | Layer | Owns | Does not establish |
 | --- | --- | --- |
@@ -521,7 +523,7 @@ Hosts must handle tool errors before reading a record. See [API reference](docs/
 
 The configured tUSD8 contract is [`0x456569838f1d43009A91ebA4263147Afd7233483`](https://explorer-test.qday.info/address/0x456569838f1d43009A91ebA4263147Afd7233483), with **six decimals**. tQDAY is the native gas asset, with 18 decimals. The application does not use QDAY Mainnet configuration as a substitute for Aevum Testnet.
 
-Aevum interactions use verified EVM JSON-RPC through viem and HTTPS polling. The implemented settlement path uses ordinary ERC-20 transfers from the vault; it does not claim account abstraction or gas sponsorship. No separate QDay API v6 specification was supplied or verified, so no undocumented v6 endpoint or capability is a dependency.
+Aevum settlement uses ERC-20 transfers from the vault. Smart-account owner actions use QDay’s ERC-4337 bundler with EntryPoint v0.7 and a prefunded Kernel v0.3.1 account. [QDay bundler configuration](https://github.com/qday-io/qday-bundler/blob/qday/v0.11.0/deploy/server/compose.yml)
 
 | Artifact | Reference |
 | --- | --- |
@@ -567,6 +569,7 @@ The contract ABI/bytecode artifact is generated from this repository's Solidity 
 | `MONGODB_URI` | Secret | Vercel server and Actions worker | Database-scoped Atlas connection string |
 | `AGENTPAY_DATABASE` | Public configuration | App and worker | Shared live database name, normally `agentpay` |
 | `AEVUM_RPC_URL` | Public configuration | Worker/deployment | Aevum HTTPS RPC; default official testnet endpoint |
+| `AGENTPAY_SMART_ACCOUNTS` | Server configuration | Live web app | Set `true` on a testnet preview to offer smart-account onboarding |
 | `AEVUM_EXECUTOR_ADDRESS` | Public address | App and worker | Executor installed in newly created vaults |
 | `AEVUM_EXECUTOR_PRIVATE_KEY` | Signing secret | Actions worker only | Restricted Aevum settlement signer |
 | `AEVUM_DEPLOYER_PRIVATE_KEY` | Signing secret | Local deployment only | Contract deployment signer |
@@ -789,7 +792,7 @@ The first distribution hypothesis is a small integration for agents that buy res
 | Provider network | Owner-authored recipient labels, verified evidence options, payment-gated access patterns | Providers verify receipts and deliver a service without manual payment handling |
 | Mainnet readiness | Durable governance, operational signer controls, privacy design, independent review and stronger authorization research | Documented security/operational review and validated demand before launch |
 
-This version has no protocol token, staking mechanism, bridge, ERC-4337 dependency, automatic marketplace discovery, or guaranteed merchant-delivery mechanism. Add new infrastructure only when supported by the target network and needed by a measured workflow. The [roadmap](docs/roadmap.md) tracks the product's next decisions.
+See the [roadmap](docs/roadmap.md) for the next product decisions.
 
 ## Repository map and documentation
 

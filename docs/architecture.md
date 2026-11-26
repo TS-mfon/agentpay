@@ -43,7 +43,9 @@ Evidence is bounded plain text, not arbitrary fetched URLs. Invoice text and ser
 
 Local demo mode uses an isolated persistent file and clearly labeled semantic/payment simulation. Hosted demo uses an isolated Atlas database. Live mode requires its complete configuration and never falls back to simulated settlement.
 
-Aevum configuration: chain 44005, tQDAY native gas, tUSD8 token 0x456569838f1d43009A91ebA4263147Afd7233483 with six decimals, HTTPS RPC https://rpc-test.qday.info, Shanghai EVM. No ERC-4337, 1Shot, bundler, paymaster, bridge or unspecified API version is a dependency.
+Aevum uses chain `44005`, the Shanghai EVM, tQDAY for gas and six-decimal tUSD8 at `0x456569838f1d43009A91ebA4263147Afd7233483`. Chain reads and settlement use the Aevum HTTPS RPC at `https://rpc-test.qday.info`.
+
+With smart accounts enabled, the browser wallet signs for a deterministic Kernel v0.3.1 account that owns the vault. AgentPay validates the deployed account's root signer and ERC-1271 login signature on Aevum. The web app journals one signed owner operation per account before sending it to QDay's EntryPoint v0.7 bundler. It verifies the operation's event and the matching vault or official token logs on Aevum before updating metadata. Resending an unresolved operation uses the same hash and signed payload. Resuming a vault batches `setPaused(false)` and `configureAgent` so they succeed or revert together. [Kernel contract](https://github.com/qday-io/kernel/blob/v3.1/src/Kernel.sol) · [QDay bundler configuration](https://github.com/qday-io/qday-bundler/blob/qday/v0.11.0/deploy/server/compose.yml)
 
 GenLayer governance deploys to the official Studio development preview (Studio Next browser alias), using the SDK studioDevnet preset, canonical https://studio-dev.genlayer.com/api RPC and chain ID61997. It is hosted development infrastructure with temporary state and possible resets, not a durable production consensus guarantee. Aevum44005 is the actual payment chain. References: https://docs.genlayer.com/developers/networks and https://docs.genlayer.com/developers/intelligent-contracts/deploying/network-configuration.
 

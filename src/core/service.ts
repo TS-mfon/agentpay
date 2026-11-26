@@ -13,6 +13,8 @@ import type {
   Dashboard,
 } from "./types";
 import { AppError } from "./errors";
+import { assertOwnerOperationVersion, finishOwnerOperation, ownerOperationPending,
+  type OwnerIntent, type OwnerOperationConfirmation } from "./owner-operations";
 import {
   parsePayment,
   parsePolicy,
@@ -49,6 +51,11 @@ const policyFor = (s: State, t: Treasury) =>
 const safePayment = ({ rawTransaction: _raw, rawGovernanceTransaction: _governanceRaw,
   policyRegistration: _registration, ...payment }: Payment) =>
   payment as Payment;
+const canConfirmOwnerOperation = (state: State, owner: string, confirmation?: OwnerOperationConfirmation) =>
+  !confirmation || ownerOperationPending(state, owner, confirmation.hash);
+const confirmOwnerOperation = (state: State, owner: string, confirmation?: OwnerOperationConfirmation) =>
+  confirmation ? finishOwnerOperation(state, owner, confirmation.hash,
+    { status: "confirmed", transactionHash: confirmation.transactionHash }) : state;
 
 export class AgentPayService {
   constructor(
@@ -163,7 +170,33 @@ export class AgentPayService {
       );
     return safePayment(p);
   }
-  async setup(owner: string, input: unknown) {
+  async checkOwnerOperation(owner: string, intent: OwnerIntent) {
+    const state = await this.store.read();
+    if ("policy" in intent && intent.policy.validUntil * 1000 <= this.now())
+      throw new AppError("POLICY_EXPIRED", "Choose a future mandate expiry.");
+    if (intent.action === "setup") {
+      if (state.treasuries.some(t => sameAddress(t.id, intent.treasuryId)))
+        throw new AppError("TREASURY_EXISTS", "This vault already has a registered agent treasury.", 409);
+      if (intent.agentId !== hashText(`agentpay:${intent.treasuryId.toLowerCase()}:${intent.agentName.trim()}`))
+        throw new AppError("INVALID_AGENT", "The agent identity does not match its treasury and name.");
+      return;
+    }
+    const treasury = this.treasury(state, owner, intent.treasuryId);
+    if (treasury.agentId !== intent.agentId)
+      throw new AppError("INVALID_AGENT", "The agent identity does not match this treasury.");
+    if (intent.action === "policy" || intent.action === "resume") {
+      if (intent.version <= treasury.policyVersion)
+        throw new AppError("POLICY_CONFLICT", "Refresh the treasury to see its current mandate version.", 409);
+      if (intent.action === "resume") {
+        const { mandate, perPaymentLimit, weeklyBudget, totalBudget, validUntil, recipients } = this.activePolicy(state, treasury);
+        const policy = parsePolicy({ mandate, perPaymentLimit, weeklyBudget, totalBudget, validUntil, recipients });
+        if (JSON.stringify(intent.policy) !== JSON.stringify(policy))
+          throw new AppError("POLICY_CONFLICT", "Refresh and resume with the treasury’s current mandate.", 409);
+      }
+    }
+  }
+
+  async setup(owner: string, input: unknown, confirmation?: OwnerOperationConfirmation) {
     if (!input || typeof input !== "object")
       throw new AppError(
         "INVALID_REQUEST",
@@ -188,7 +221,9 @@ export class AgentPayService {
         "INVALID_AGENT",
         "Enter an agent name of up to 80 characters.",
       );
-    if (policy.validUntil * 1000 <= this.now())
+    if (confirmation && !canConfirmOwnerOperation(await this.store.read(), owner, confirmation))
+      return this.dashboard(owner, treasuryId);
+    if (!confirmation && policy.validUntil * 1000 <= this.now())
       throw new AppError("POLICY_EXPIRED", "Choose a future mandate expiry.");
     const agentId = hashText(
       "agentpay:" + treasuryId.toLowerCase() + ":" + agentName.trim(),
@@ -233,6 +268,7 @@ export class AgentPayService {
           409,
         );
       this.assertSnapshotPolicy(snapshot, policy);
+      assertOwnerOperationVersion(snapshot.policyVersion, confirmation?.version);
       treasury = {
         ...treasury,
         ...snapshot,
@@ -245,13 +281,14 @@ export class AgentPayService {
       };
     }
     await this.store.update((s) => {
+      if (!canConfirmOwnerOperation(s, owner, confirmation)) return s;
       if (s.treasuries.some((t) => sameAddress(t.id, treasuryId)))
         throw new AppError(
           "TREASURY_EXISTS",
           "This vault already has a registered agent treasury.",
           409,
         );
-      return {
+      return confirmOwnerOperation({
         ...s,
         treasuries: [...s.treasuries, treasury],
         policies: [
@@ -264,7 +301,7 @@ export class AgentPayService {
             mandateHash: hashText(policy.mandate),
           },
         ],
-      };
+      }, owner, confirmation);
     });
     return this.dashboard(owner, treasuryId);
   }
@@ -501,11 +538,12 @@ export class AgentPayService {
       throw new AppError("UNAUTHORIZED", "Agent credential was revoked or rotated during authorization.", 401);
     return { owner: current.owner, treasuryId: current.id, agentId: current.agentId, keyVersion: current.keyVersion };
   }
-  async updatePolicy(owner: string, input: unknown, treasuryId?: string) {
+  async updatePolicy(owner: string, input: unknown, treasuryId?: string, confirmation?: OwnerOperationConfirmation) {
     const next = parsePolicy(policyFields(input));
-    if (next.validUntil * 1000 <= this.now())
+    if (!confirmation && next.validUntil * 1000 <= this.now())
       throw new AppError("POLICY_EXPIRED", "Choose a future mandate expiry.");
     const state = await this.store.read();
+    if (!canConfirmOwnerOperation(state, owner, confirmation)) return this.dashboard(owner, treasuryId);
     const old = this.treasury(state, owner, treasuryId);
     const snapshot =
       this.mode === "live"
@@ -514,6 +552,7 @@ export class AgentPayService {
     if (snapshot) {
       this.assertSnapshotOwner(snapshot, owner);
       this.assertSnapshotPolicy(snapshot, next);
+      assertOwnerOperationVersion(snapshot.policyVersion, confirmation?.version);
     }
     const version = snapshot?.policyVersion ?? old.policyVersion + 1;
     if (
@@ -526,6 +565,7 @@ export class AgentPayService {
         409,
       );
     await this.store.update((s) => {
+      if (!canConfirmOwnerOperation(s, owner, confirmation)) return s;
       const t = this.treasury(s, owner, treasuryId);
       if (t.policyVersion !== old.policyVersion)
         throw new AppError(
@@ -537,9 +577,9 @@ export class AgentPayService {
         ...t,
         ...snapshot,
         policyVersion: version,
-        active: true,
+        active: snapshot?.active ?? true,
       };
-      return {
+      return confirmOwnerOperation({
         ...s,
         treasuries: s.treasuries.map((x) => (x.id === t.id ? updated : x)),
         policies: [
@@ -564,11 +604,11 @@ export class AgentPayService {
               }
             : r,
         ),
-      };
+      }, owner, confirmation);
     });
     return this.dashboard(owner, treasuryId);
   }
-  async control(owner: string, input: unknown, treasuryId?: string) {
+  async control(owner: string, input: unknown, treasuryId?: string, confirmation?: OwnerOperationConfirmation) {
     if (!input || typeof input !== "object")
       throw new AppError("INVALID_REQUEST", "An owner action is required.");
     const { action, amount } = input as Record<string, unknown>;
@@ -589,6 +629,7 @@ export class AgentPayService {
       value = units(amount);
     }
     const base = await this.store.read();
+    if (!canConfirmOwnerOperation(base, owner, confirmation)) return this.dashboard(owner, treasuryId);
     const old = this.treasury(base, owner, treasuryId);
     const snapshot =
       this.mode === "live"
@@ -598,15 +639,17 @@ export class AgentPayService {
           )
         : null;
     await this.store.update((s) => {
+      if (!canConfirmOwnerOperation(s, owner, confirmation)) return s;
       const t = this.treasury(s, owner, treasuryId);
       const oldPolicy = this.activePolicy(s, t);
-      if (t.policyVersion !== old.policyVersion || t.keyVersion !== old.keyVersion ||
-          t.paused !== old.paused || t.active !== old.active)
+      if (t.policyVersion !== old.policyVersion || (!confirmation &&
+          (t.keyVersion !== old.keyVersion || t.paused !== old.paused || t.active !== old.active)))
         throw new AppError("POLICY_CONFLICT", "Spending authority changed while confirming this control. Refresh and retry.", 409);
       let updated = { ...t };
       if (snapshot) {
         if (!sameAddress(snapshot.owner, owner))
           throw new AppError("UNAUTHORIZED", "Vault owner changed.", 403);
+        assertOwnerOperationVersion(snapshot.policyVersion, confirmation?.version);
         const metadataAligned =
           snapshot.policyVersion === t.policyVersion &&
           snapshot.mandateHash === oldPolicy.mandateHash;
@@ -634,7 +677,8 @@ export class AgentPayService {
         }
         if (
           (action === "pause" && !updated.paused) ||
-          (action === "resume" && (snapshot.paused || !snapshot.active)) ||
+          (action === "resume" && (snapshot.paused || (!snapshot.active &&
+            (!confirmation || snapshot.validUntil * 1000 > this.now())))) ||
           (action === "revoke" && snapshot.active)
         )
           throw new AppError(
@@ -675,7 +719,7 @@ export class AgentPayService {
         action === "resume" && updated.policyVersion > t.policyVersion
           ? { ...oldPolicy, version: updated.policyVersion }
           : null;
-      return {
+      return confirmOwnerOperation({
         ...s,
         policies: nextPolicy ? [...s.policies, nextPolicy] : s.policies,
         treasuries: s.treasuries.map((x) => (x.id === t.id ? updated : x)),
@@ -693,7 +737,7 @@ export class AgentPayService {
                 : r,
             )
           : s.payments,
-      };
+      }, owner, confirmation);
     });
     return this.dashboard(owner, treasuryId);
   }

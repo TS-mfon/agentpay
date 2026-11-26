@@ -13,6 +13,7 @@ export const aevum = defineChain({
   testnet: true,
 });
 export const vaultAbi = parseAbi([
+  "constructor(address tokenAddress, address initialOwner, address initialExecutor)",
   "function token() view returns (address)",
   "function owner() view returns (address)",
   "function executor() view returns (address)",
@@ -26,5 +27,14 @@ export const vaultAbi = parseAbi([
   "function availableBudgets(bytes32) view returns (uint256 weekly, uint256 total)",
   "function spentBudgets(bytes32) view returns (uint256 week, uint256 weekly, uint256 total)",
   "function executePayment(bytes32 requestId, bytes32 agentId, uint256 policyVersion, address recipient, uint256 amount, uint256 approvalExpiresAt, bytes32 requestHash, bytes32 decisionRef)",
+  "function configureAgent(bytes32 agentId, uint256 policyVersion, bytes32 mandateHash, uint256 perPaymentLimit, uint256 weeklyBudget, uint256 totalBudget, uint256 validUntil, address[] recipients)",
+  "function setPaused(bool value)",
+  "function revokeAgent(bytes32 agentId)",
+  "function withdraw(address recipient, uint256 amount)",
+  "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
+  "event AgentConfigured(bytes32 indexed agentId, uint256 indexed policyVersion, bytes32 mandateHash, uint256 perPaymentLimit, uint256 weeklyBudget, uint256 totalBudget, uint256 validUntil, uint256 authorizationEpoch, address[] recipients)",
+  "event AgentRevoked(bytes32 indexed agentId, uint256 indexed policyVersion)",
+  "event PauseChanged(bool paused, uint256 authorizationEpoch)",
+  "event Withdrawn(address indexed recipient, uint256 amount)",
   "event PaymentExecuted(bytes32 indexed requestId, bytes32 indexed agentId, uint256 indexed policyVersion, address recipient, uint256 amount, bytes32 requestHash, bytes32 decisionRef, uint256 authorizationEpoch)",
 ]);

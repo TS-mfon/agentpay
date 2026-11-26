@@ -30,6 +30,8 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
     "@next/env": "16.4.6",
+    "@zerodev/ecdsa-validator": "5.4.9",
+    "@zerodev/sdk": "5.5.12",
     "genlayer-js": "2.0.0",
     "lucide-react": "^0.577.0",
     "mongodb": "^7.0.0",

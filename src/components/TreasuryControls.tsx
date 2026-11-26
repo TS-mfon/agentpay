@@ -225,9 +225,14 @@ export default function TreasuryControls({
                     {data.mode === "demo"
                       ? "This changes the simulated treasury balance. No tokens move on Aevum."
                       : dialog === "fund"
-                        ? "Your wallet will transfer tUSD8 to the treasury on Aevum Testnet."
-                        : "Your wallet will withdraw available tUSD8 to the treasury owner's address."}
+                        ? data.ownerAccountType === "smart"
+                          ? "Load your smart account with tUSD8 before funding this vault. Your smart account pays tQDAY for gas."
+                          : "Your wallet will transfer tUSD8 to the treasury on Aevum Testnet."
+                        : data.ownerAccountType === "smart"
+                          ? "Unused tUSD8 goes back to your smart account."
+                          : "Your wallet will withdraw available tUSD8 to the treasury owner's address."}
                   </p>
+                  {data.ownerAccountType === "smart" ? <code className="break-address">{data.treasury.owner}</code> : null}
                   <label>
                     Amount in tUSD8
                     <input

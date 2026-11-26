@@ -64,15 +64,25 @@ export async function owner(
   runtime: Runtime,
   mutating = false,
 ) {
+  return (await ownerIdentity(request, runtime, mutating)).owner;
+}
+
+export async function ownerIdentity(request: Request, runtime: Runtime, mutating = false) {
   if (mutating) assertOrigin(request);
-  if (runtime.mode === "demo") return DEMO_OWNER;
+  if (runtime.mode === "demo") return { owner: DEMO_OWNER };
   const cookies = request.headers.get("cookie") ?? "";
   const token = cookies
     .split(";")
     .map((s) => s.trim())
     .find((s) => s.startsWith("agentpay_session="))
     ?.slice("agentpay_session=".length);
-  return runtime.auth.owner(token);
+  return runtime.auth.identity(token, mutating);
+}
+
+export async function directWalletOwner(request: Request, runtime: Runtime) {
+  const identity = await ownerIdentity(request, runtime, true);
+  if (identity.signer) throw new AppError("SMART_ACCOUNT_OPERATION_REQUIRED", "Use the smart-account treasury controls.", 409);
+  return identity.owner;
 }
 export async function agent(request: Request, runtime: Runtime) {
   const header = request.headers.get("authorization");
@@ -84,7 +94,7 @@ export async function agent(request: Request, runtime: Runtime) {
     );
   return runtime.service.authenticateAgent(header.slice(7));
 }
-export async function body(request: Request) {
+export async function body(request: Request, maxBytes = 16000) {
   if (!request.headers.get("content-type")?.includes("application/json"))
     throw new AppError("INVALID_CONTENT_TYPE", "Send application/json.");
   const reader = request.body?.getReader();
@@ -95,11 +105,11 @@ export async function body(request: Request) {
       const chunk = await reader.read();
       if (chunk.done) break;
       size += chunk.value.byteLength;
-      if (size > 16000) {
+      if (size > maxBytes) {
         await reader.cancel();
         throw new AppError(
           "REQUEST_TOO_LARGE",
-          "Request body exceeds 16KB.",
+          `Request body exceeds ${maxBytes / 1000}KB.`,
           413,
         );
       }

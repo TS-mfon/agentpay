@@ -12,7 +12,7 @@ beforeEach(() => {
   fixture.runtime = {
     mode: "demo",
     store: new MemoryStore(demoState()),
-    auth: { owner: vi.fn(async () => DEMO_OWNER) },
+    auth: { identity: vi.fn(async () => ({ owner: DEMO_OWNER })) },
     service: {
       authenticateAgent: vi.fn(async () => ({
         owner: DEMO_OWNER,
@@ -62,7 +62,7 @@ describe("API envelope and boundary security", () => {
     expect(
       await owner(request({ cookie: "other=1; agentpay_session=token" }), live),
     ).toBe(DEMO_OWNER);
-    expect(live.auth.owner).toHaveBeenCalledWith("token");
+    expect(live.auth.identity).toHaveBeenCalledWith("token", false);
   });
   it("requires bearer credentials for the agent API", async () => {
     const runtime = fixture.runtime as Parameters<typeof agent>[1];

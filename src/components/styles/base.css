@@ -91,3 +91,10 @@ textarea { resize: vertical; }
 .welcome-steps li { counter-increment: start; display: flex; align-items: center; gap: 11px; }
 .welcome-steps li::before { content: counter(start); width: 27px; height: 27px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; font-size: 12px; }
 .welcome-content .welcome-note { font-size: 12px; line-height: 1.7; margin: 14px 0 7px; }
+.welcome-wallet-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.smart-account-preview { display: grid; gap: 14px; margin-top: 20px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.smart-account-preview dt { font-weight: 600; }
+.smart-account-preview dd { margin: 4px 0 0; font-family: monospace; }
+.smart-account-preview a { text-decoration: underline; }
+.smart-operation { overflow-wrap: anywhere; }
+.smart-operation .welcome-wallet-actions { margin-top: 10px; }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, errorMessage } from "./api";
 import Icon from "./Icon";
 import type { DashboardData } from "./types";
+import type { OwnerOperationStatus } from "../core/owner-operations";
 import {
   emptySetup, setupSteps, validateSetupStep, buildSetupInput,
   type SetupForm,
@@ -15,7 +16,12 @@ const stepCopy = [
   ["A final look before you create.", "Review your agent's authority. Your wallet confirms every on-chain setup transaction."],
 ] as const;
 
-export default function SetupView({ onCreated }: { onCreated: (data: DashboardData) => Promise<void> }) {
+export default function SetupView({ onCreated, smartOwner, pending, onOperation }: {
+  onCreated: (data: DashboardData) => Promise<void>;
+  smartOwner?: string;
+  pending?: boolean;
+  onOperation: (operation: OwnerOperationStatus | null) => Promise<void>;
+}) {
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -46,7 +52,7 @@ export default function SetupView({ onCreated }: { onCreated: (data: DashboardDa
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || pending) return;
     if (step < 3) { continueSetup(); return; }
     const failure = validateSetupStep(3, form, createNew);
     if (failure) { setError(failure); return; }
@@ -54,19 +60,29 @@ export default function SetupView({ onCreated }: { onCreated: (data: DashboardDa
     setError("");
     setProgress("");
     try {
-      const { prepareTreasury } = await import("./wallet");
       const input = buildSetupInput(form, createNew, Math.floor(Date.now() / 1000));
-      const treasuryId = await prepareTreasury(input, createNew, setProgress, (address) => {
+      const vaultCreated = (address: string) => {
         setForm((current) => ({ ...current, treasuryId: address }));
         setCreatedVault(address);
         setCreateNew(false);
-      });
+      };
+      if (smartOwner) {
+        const { smartTreasurySetup } = await import("./smart-wallet");
+        await onOperation(await smartTreasurySetup(input, smartOwner, createNew, setProgress, vaultCreated));
+        return;
+      }
+      const { prepareTreasury } = await import("./wallet");
+      const treasuryId = await prepareTreasury(input, createNew, setProgress, vaultCreated);
       setForm((current) => ({ ...current, treasuryId }));
       setCreateNew(false);
       setProgress("Registering the confirmed treasury and mandate…");
       const created = await api<DashboardData>("/api/owner/setup", { ...input, treasuryId });
       await onCreated(created);
     } catch (failure) {
+      if (smartOwner) {
+        const saved = await api<OwnerOperationStatus | null>("/api/owner/user-operations").catch(() => null);
+        if (saved?.status === "pending") await onOperation(saved);
+      }
       setError(errorMessage(failure));
     } finally {
       setBusy(false);
@@ -104,7 +120,7 @@ export default function SetupView({ onCreated }: { onCreated: (data: DashboardDa
           <p>{stepCopy[step][1]}</p>
         </div>
         <form className="stack-form setup-form" onSubmit={submit} noValidate>
-          <fieldset disabled={busy} className="setup-fields" key={step}>
+          <fieldset disabled={busy || pending} className="setup-fields" key={step}>
             {step === 0 ? (
               <>
                 <label htmlFor="setup-agent-name">Agent name</label>
@@ -155,7 +171,7 @@ export default function SetupView({ onCreated }: { onCreated: (data: DashboardDa
                 {!createNew ? (
                   <label>Aevum treasury vault address
                     <input required placeholder="0x…" value={form.treasuryId} onChange={(event) => update("treasuryId", event.target.value)} />
-                    <small>The connected wallet must own this vault. Its token and ownership are checked on-chain.</small>
+                    <small>{smartOwner ? "Your smart account must own this vault." : "The connected wallet must own this vault."} Its token and ownership are checked on-chain.</small>
                   </label>
                 ) : null}
               </>
@@ -179,7 +195,7 @@ export default function SetupView({ onCreated }: { onCreated: (data: DashboardDa
                 {!createNew ? <p className="review-vault break-address">Vault: {form.treasuryId}</p> : null}
                 <div className="setup-explainer"><Icon name="wallet" size={22} />
                   <div><strong>{createNew ? "Two wallet confirmations" : "One wallet confirmation"}</strong>
-                    <p>{createNew ? "Create the vault, then authorize your agent. " : "Authorize the agent in your existing vault. "}You need tQDAY for gas. Fund with tUSD8 after setup.</p>
+                    <p>{smartOwner ? createNew ? "Your browser wallet pays tQDAY to deploy the vault. Your smart account pays tQDAY to authorize the agent." : "Your smart account pays tQDAY to authorize the agent." : `${createNew ? "Create the vault, then authorize your agent. " : "Authorize the agent in your existing vault. "}You need tQDAY for gas. Fund with tUSD8 after setup.`}</p>
                     <a href="https://faucet.qday.info/en" target="_blank" rel="noreferrer">Get testnet tokens <Icon name="external" size={13} /></a></div>
                 </div>
               </div>
@@ -193,7 +209,7 @@ export default function SetupView({ onCreated }: { onCreated: (data: DashboardDa
           {progress ? <p role="status" aria-live="polite" className="setup-progress"><span className="loading-spinner" />{progress}</p> : null}
           <div className="setup-actions">
             {step > 0 ? <button type="button" className="secondary-button" disabled={busy} onClick={() => moveTo(step - 1)}>Back</button> : <a href="/" className="text-button">Back to home</a>}
-            <button className="primary-button" disabled={busy}>
+            <button className="primary-button" disabled={busy || pending}>
               {busy ? "Waiting for confirmation…" : step < 3 ? "Continue" : createNew ? "Create and authorize treasury" : "Configure and register treasury"}
               {!busy ? <Icon name="arrow" size={18} /> : null}
             </button>

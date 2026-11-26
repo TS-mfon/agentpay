@@ -27,4 +27,4 @@ These implementation claims do not establish a successful live payment. Record a
 - Improve operational key custody, runtime monitoring and independent cross-chain authorization verification.
 - Complete independent financial-security review, durable governance infrastructure and operational readiness before mainnet.
 
-Account abstraction, gas sponsorship, bridges, streaming payments, and broad marketplace protocols remain deferred until supported infrastructure and a concrete user need justify them.
+The Aevum owner smart-account pilot uses a prefunded account. Gas sponsorship, bridges, streaming payments, and broad marketplace protocols remain future work.

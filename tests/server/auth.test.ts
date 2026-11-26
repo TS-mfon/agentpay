@@ -11,6 +11,37 @@ import { emptyState } from "../../src/core/types";
 const account = privateKeyToAccount(generatePrivateKey());
 afterEach(() => vi.unstubAllEnvs());
 describe("owner authentication", () => {
+  it("binds a smart-account challenge and session to the verified account and its signer", async () => {
+    const owner = "0x1111111111111111111111111111111111111111";
+    const verifier = {
+      verify: vi.fn().mockResolvedValue(true),
+      isCurrent: vi.fn().mockResolvedValue(true),
+    };
+    const auth = new OwnerAuth(new MemoryStore(emptyState()), Date.now, verifier);
+    const challenge = await auth.nonce(owner, "https://agentpay.example", account.address);
+    expect(challenge.message).toContain(`Wallet: ${owner}`);
+    expect(challenge.message).toContain(`Signer: ${account.address}`);
+    const signature = `0x${"11".repeat(86)}`;
+    const proof = { address: owner, nonce: challenge.nonce, signature };
+    const session = await auth.verify(proof);
+    expect(verifier.verify).toHaveBeenCalledWith(owner, account.address, challenge.message, signature);
+    expect(await auth.identity(session.token)).toEqual({ owner, signer: account.address });
+    verifier.isCurrent.mockResolvedValue(false);
+    await expect(auth.identity(session.token, true)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(auth.verify(proof)).rejects.toMatchObject({ code: "NONCE_EXPIRED" });
+  });
+
+  it("rejects a regular wallet signature for a smart-account challenge", async () => {
+    const owner = "0x1111111111111111111111111111111111111111";
+    const verifier = { verify: vi.fn(), isCurrent: vi.fn() };
+    const auth = new OwnerAuth(new MemoryStore(emptyState()), Date.now, verifier);
+    const challenge = await auth.nonce(owner, "https://agentpay.example", account.address);
+    const signature = await account.signMessage({ message: challenge.message });
+    await expect(auth.verify({ address: owner, nonce: challenge.nonce, signature }))
+      .rejects.toMatchObject({ code: "INVALID_SIGNATURE" });
+    expect(verifier.verify).not.toHaveBeenCalled();
+  });
+
   it("uses one-time signed nonce, hashed session, and logout revocation", async () => {
     const store = new MemoryStore(emptyState());
     const auth = new OwnerAuth(store);

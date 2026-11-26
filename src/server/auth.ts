@@ -1,16 +1,23 @@
 import { randomBytes, createHash } from "node:crypto";
-import { getAddress, isAddress, verifyMessage } from "viem";
+import { getAddress, isAddress, verifyMessage, type Address, type Hex } from "viem";
 import type { AtomicStore } from "../core/ports";
 import { AppError } from "../core/errors";
 import { sameAddress } from "../core/validation";
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+export interface SmartOwnerVerifier {
+  verify(owner: Address, signer: Address, message: string, signature: Hex): Promise<boolean>;
+  isCurrent(owner: Address, signer: Address): Promise<boolean>;
+}
+export interface OwnerIdentity { owner: string; signer?: string }
+
 export class OwnerAuth {
   constructor(
     private readonly store: AtomicStore,
     private readonly now: () => number = Date.now,
+    private readonly smartOwners?: SmartOwnerVerifier,
   ) {}
-  async nonce(address: string, origin: string) {
+  async nonce(address: string, origin: string, smartSigner?: string) {
     let owner: string;
     try {
       if (!isAddress(address, { strict: true })) throw new Error("Invalid address");
@@ -21,11 +28,20 @@ export class OwnerAuth {
         "A valid wallet address is required.",
       );
     }
+    let signer: Address | undefined;
+    if (smartSigner !== undefined) {
+      if (!this.smartOwners)
+        throw new AppError("SMART_ACCOUNTS_UNAVAILABLE", "Smart accounts are unavailable here.", 403);
+      if (!isAddress(smartSigner, { strict: true }) || sameAddress(smartSigner, owner) || /^0x0{40}$/i.test(smartSigner))
+        throw new AppError("INVALID_ADDRESS", "A valid browser wallet signer is required.");
+      signer = getAddress(smartSigner);
+    }
     const nonce = randomBytes(24).toString("hex");
     const message = [
       "Sign in to AgentPay",
       `Origin: ${origin}`,
       `Wallet: ${owner}`,
+      ...(signer ? [`Signer: ${signer}`] : []),
       "Network: QDay Aevum Testnet (44005)",
       `Nonce: ${nonce}`,
       `Expires: ${new Date(this.now() + 300000).toISOString()}`,
@@ -34,7 +50,7 @@ export class OwnerAuth {
       const active = s.nonces.filter((n) => n.expiresAt > this.now());
       if (active.filter((n) => sameAddress(n.owner, owner)).length >= 5)
         throw new AppError("NONCE_LIMIT", "This wallet has five active sign-in challenges. Use an existing challenge or wait five minutes.", 429);
-      return { ...s, nonces: [...active, { value: nonce, owner, message, expiresAt: this.now() + 300000 }] };
+      return { ...s, nonces: [...active, { value: nonce, owner, ...(signer ? { signer } : {}), message, expiresAt: this.now() + 300000 }] };
     });
     return { nonce, message };
   }
@@ -46,7 +62,7 @@ export class OwnerAuth {
       typeof address !== "string" ||
       typeof nonce !== "string" ||
       typeof signature !== "string" ||
-      !/^0x[0-9a-fA-F]{130}$/.test(signature)
+      !/^0x(?:[0-9a-fA-F]{130}|[0-9a-fA-F]{172})$/.test(signature)
     )
       throw new AppError(
         "INVALID_SIGNATURE",
@@ -55,16 +71,14 @@ export class OwnerAuth {
     const proof = (await this.store.read()).nonces.find((n) =>
       n.value === nonce && sameAddress(n.owner, address) && n.expiresAt > this.now());
     if (!proof) throw new AppError("NONCE_EXPIRED", "The sign-in challenge expired or was already used.", 401);
-    let valid = false;
-    try {
-      valid = await verifyMessage({
-        address: proof!.owner as `0x${string}`,
-        message: proof!.message,
-        signature: signature as `0x${string}`,
-      });
-    } catch {
-      valid = false;
-    }
+    const valid = proof.signer
+      ? signature.length === 174 && !!this.smartOwners && await this.smartOwners.verify(
+          proof.owner as Address, proof.signer as Address, proof.message, signature as Hex)
+      : signature.length === 132 && await verifyMessage({
+          address: proof.owner as Address,
+          message: proof.message,
+          signature: signature as Hex,
+        }).catch(() => false);
     if (!valid)
       throw new AppError(
         "INVALID_SIGNATURE",
@@ -74,16 +88,20 @@ export class OwnerAuth {
     const token = randomBytes(32).toString("base64url");
     await this.store.update((s) => {
       const current = s.nonces.find((n) => n.value === nonce && n.owner === proof.owner &&
-        n.message === proof.message && n.expiresAt > this.now());
+        n.message === proof.message && n.signer === proof.signer && n.expiresAt > this.now());
       if (!current) throw new AppError("NONCE_EXPIRED", "The sign-in challenge expired or was already used.", 401);
       return { ...s, nonces: s.nonces.filter((n) => n.value !== nonce), sessions: [
         ...s.sessions.filter((session) => session.expiresAt > this.now()),
-        { digest: digest(token), owner: proof.owner, expiresAt: this.now() + 43200000 },
+        { digest: digest(token), owner: proof.owner, ...(proof.signer ? { signer: proof.signer } : {}),
+          expiresAt: this.now() + 43200000 },
       ] };
     });
-    return { token, owner: proof!.owner };
+    return { token, owner: proof.owner, ...(proof.signer ? { signer: proof.signer } : {}) };
   }
   async owner(token: string | undefined) {
+    return (await this.identity(token)).owner;
+  }
+  async identity(token: string | undefined, mutating = false): Promise<OwnerIdentity> {
     if (!token)
       throw new AppError(
         "UNAUTHORIZED",
@@ -99,7 +117,11 @@ export class OwnerAuth {
         "Your owner session expired. Sign in again.",
         401,
       );
-    return session.owner;
+    if (session.signer && (!this.smartOwners || (mutating && !await this.smartOwners.isCurrent(
+      session.owner as Address, session.signer as Address,
+    ))))
+      throw new AppError("UNAUTHORIZED", "Reconnect the wallet that controls this smart account.", 401);
+    return { owner: session.owner, ...(session.signer ? { signer: session.signer } : {}) };
   }
   async logout(token: string | undefined) {
     if (!token) return;

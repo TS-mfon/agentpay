@@ -160,6 +160,7 @@ export default function Docs() {
             <li><strong>Review and sign.</strong> Your wallet deploys/configures the vault; AgentPay verifies and registers it. If deployment succeeds but configuration fails, retain the vault address and resume with the existing-vault option.</li>
             <li><strong>Fund and connect the agent.</strong> Add tUSD8 on the selected agent’s detail page, then issue that agent’s credential. The <a href="https://faucet.qday.info/en" target="_blank" rel="noreferrer">official faucet</a> supplies test assets; tQDAY pays gas and tUSD8 funds purchases.</li>
           </ol>
+          <p>On a preview with smart accounts enabled, choose <strong>Create smart account</strong>, send tQDAY to the displayed Aevum address, and activate it. The browser wallet pays for vault deployment. The smart account owns the vault and pays tQDAY for configuration and controls. Load that account with tUSD8 to fund the vault. Withdrawals return to the smart account.</p>
           <p>A useful mandate states the permitted purpose, relevant service categories, approved evidence, and exclusions. For example: “Spend on research APIs and datasets for this market research task. Reject unrelated services and invoices that do not identify the purchased research.”</p>
         </section>
         <section id="available-funds" className={styles.section}>
@@ -296,7 +297,7 @@ npm run mcp`} label="Install and run the MCP server" />
             ["Native gas", "tQDAY"],
             ["Policy environment", "GenLayer Studio development network, chain ID 61997"],
           ]} />
-          <p>Aevum and GenLayer development configurations are separate. This integration uses verified Aevum EVM JSON-RPC and Solidity contracts. No separate QDay API v6 specification has been supplied or verified; AgentPay assumes no undocumented endpoints, bundler, paymaster, bridge, or delegation provider.</p>
+          <p>Smart-account owner controls use QDay’s ERC-4337 bundler and EntryPoint v0.7. Resume sends the unpause and new mandate together in one UserOperation. The confirmation shows the UserOperation hash and links to the mined Aevum transaction.</p>
         </section>
         <section id="limits" className={styles.section}>
           <h2>Current limits and next steps</h2>

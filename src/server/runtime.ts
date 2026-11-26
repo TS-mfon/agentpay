@@ -52,11 +52,15 @@ async function createRuntime(options: { genlayerEndpoint?: string } = {}): Promi
     mode === "demo"
       ? demoPorts()
       : (await import("../integrations/live")).createLivePorts(options);
+  const smartOwners = mode === "live" && process.env.AGENTPAY_SMART_ACCOUNTS === "true"
+    ? await import("../integrations/qday-smart-account") : undefined;
   return {
     mode,
     store,
     service: new AgentPayService(store, ports, mode),
-    auth: new OwnerAuth(store),
+    auth: new OwnerAuth(store, Date.now, smartOwners?.createSmartOwnerVerifier(
+      smartOwners.qdayPublicClient(process.env.AEVUM_RPC_URL),
+    )),
   };
 }
 export function getRuntime() {

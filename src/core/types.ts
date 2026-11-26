@@ -1,3 +1,5 @@
+import type { OwnerOperationRecord } from "./owner-operations";
+
 export const TUSD8_ADDRESS = "0x456569838f1d43009A91ebA4263147Afd7233483" as const;
 export type PaymentStatus =
   | "queued"
@@ -90,12 +92,14 @@ export interface Credential {
 export interface Nonce {
   value: string;
   owner: string;
+  signer?: string;
   message: string;
   expiresAt: number;
 }
 export interface Session {
   digest: string;
   owner: string;
+  signer?: string;
   expiresAt: number;
 }
 export interface RateWindow {
@@ -106,6 +110,7 @@ export interface RateWindow {
 export interface State {
   revision: number;
   workerLease?: { token: string; expiresAt: number };
+  ownerOperations?: OwnerOperationRecord[];
   treasuries: Treasury[];
   policies: Policy[];
   payments: Payment[];

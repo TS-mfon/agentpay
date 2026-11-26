@@ -2,6 +2,7 @@ import { TUSD8_ADDRESS } from "@/core/types";
 import { handle } from "@/server/http";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { qdaySmartAccount } from "@/integrations/qday-smart-account";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   return handle(request, async (runtime) => {
@@ -30,6 +31,8 @@ export async function GET(request: Request) {
       vaultDeploymentAvailable: Boolean(vaultBytecode),
       rpcUrl: "https://rpc-test.qday.info",
       explorerUrl: "https://explorer-test.qday.info",
+      ...(runtime.mode === "live" && process.env.AGENTPAY_SMART_ACCOUNTS === "true"
+        ? { smartAccounts: qdaySmartAccount } : {}),
     };
   });
 }
