@@ -41,12 +41,16 @@ async function openWalletWelcome(page: Page, enabled: boolean) {
   return page.getByRole("region", { name: "Start with your wallet." });
 }
 
-async function mockBrowserWallet(page: Page) {
+async function mockBrowserWallet(page: Page, options: { onAevum?: boolean; knowsAevum?: boolean; declineSwitch?: boolean } = {},
+  onRequest?: (method: string) => Promise<void>) {
   const methods: string[] = [];
-  await page.exposeFunction("recordSmartAccountWalletRequest", (method: string) => {
+  await page.exposeFunction("recordSmartAccountWalletRequest", async (method: string) => {
     methods.push(method);
+    await onRequest?.(method);
   });
-  await page.addInitScript(({ chain, owner }) => {
+  await page.addInitScript(({ chain, owner, options }) => {
+    let selectedChain = options.onAevum ? chain : "0x1";
+    let knowsAevum = options.knowsAevum;
     const browser = window as Window & {
       recordSmartAccountWalletRequest?: (method: string) => Promise<void>;
     };
@@ -54,12 +58,19 @@ async function mockBrowserWallet(page: Page) {
       async request({ method }: { method: string }) {
         await browser.recordSmartAccountWalletRequest!(method);
         if (method === "eth_requestAccounts" || method === "eth_accounts") return [owner];
-        if (method === "eth_chainId") return chain;
-        if (method === "wallet_switchEthereumChain") return null;
+        if (method === "eth_chainId") return selectedChain;
+        if (method === "wallet_switchEthereumChain") {
+          if (options.declineSwitch) throw Object.assign(new Error("Switch declined"), { code: 4001 });
+          if (!knowsAevum) throw { code: -32603, data: { originalError: { code: 4902 } } };
+          selectedChain = chain;
+          return null;
+        }
+        if (method === "wallet_addEthereumChain") { knowsAevum = true; return null; }
         throw new Error(`Unexpected browser wallet request: ${method}`);
       },
     } });
-  }, { chain: `0x${chainId.toString(16)}`, owner: walletAddress });
+  }, { chain: `0x${chainId.toString(16)}`, owner: walletAddress,
+    options: { onAevum: true, knowsAevum: true, ...options } });
   return methods;
 }
 
@@ -123,7 +134,7 @@ test("creating a smart account without a browser wallet reports how to proceed",
 });
 
 test("smart-account preview shows its predicted address before asking to activate", async ({ page }) => {
-  const walletMethods = await mockBrowserWallet(page);
+  const walletMethods = await mockBrowserWallet(page, { onAevum: false, knowsAevum: false });
   const unexpectedRequests = await mockAccountPreview(page);
   const welcome = await openWalletWelcome(page, true);
 
@@ -135,8 +146,54 @@ test("smart-account preview shows its predicted address before asking to activat
   await expect(main).toContainText("tQDAY");
   await expect(main.getByRole("button", { name: "Activate smart account", exact: true })).toBeVisible();
   expect(walletMethods).toContain("eth_requestAccounts");
+  expect(walletMethods.filter(method => method.startsWith("wallet_"))).toEqual([
+    "wallet_switchEthereumChain", "wallet_addEthereumChain", "wallet_switchEthereumChain",
+  ]);
   expect(walletMethods.every((method) => !/sign|send/i.test(method))).toBe(true);
   expect(unexpectedRequests).toEqual([]);
+});
+
+test("the workspace network shortcut adds and switches Aevum without signing in", async ({ page }) => {
+  const walletMethods = await mockBrowserWallet(page, { onAevum: false, knowsAevum: false });
+  const unexpectedRequests = await mockAccountPreview(page);
+  await openWalletWelcome(page, true);
+  await page.getByRole("button", { name: "Switch to Aevum Testnet" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toContainText("Your wallet is on Aevum Testnet");
+  expect(walletMethods.filter(method => method.startsWith("wallet_"))).toEqual([
+    "wallet_switchEthereumChain", "wallet_addEthereumChain", "wallet_switchEthereumChain",
+  ]);
+  expect(walletMethods).not.toContain("eth_requestAccounts");
+  expect(unexpectedRequests).toEqual([]);
+});
+
+test("declining the network switch stops wallet sign-in", async ({ page }) => {
+  const walletMethods = await mockBrowserWallet(page, { onAevum: false, declineSwitch: true });
+  const unexpectedRequests = await mockAccountPreview(page);
+  const welcome = await openWalletWelcome(page, false);
+  await welcome.getByRole("button", { name: "Connect wallet", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("The network switch was declined");
+  expect(walletMethods).not.toContain("wallet_addEthereumChain");
+  expect(walletMethods.every(method => !/sign|send/i.test(method))).toBe(true);
+  expect(unexpectedRequests).toEqual([]);
+});
+
+test("treasury setup waits while the wallet confirms a network switch", async ({ page }) => {
+  const confirmation = Promise.withResolvers<void>();
+  await mockBrowserWallet(page, { onAevum: false }, async method => {
+    if (method === "wallet_switchEthereumChain") await confirmation.promise;
+  });
+  await page.route("**/api/owner/agents", route => route.fulfill({
+    json: { success: true, data: { mode: "live", owner: walletAddress, agents: [] } },
+  }));
+  await page.goto("/setup");
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Switch to Aevum Testnet" }).click();
+  try {
+    await expect(page.getByRole("button", { name: "Waiting for confirmation…" })).toBeDisabled();
+  } finally {
+    confirmation.resolve();
+  }
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
 });
 
 test("an unfunded smart account explains how to activate without requesting a signature", async ({ page }) => {

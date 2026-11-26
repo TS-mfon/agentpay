@@ -78,12 +78,17 @@ export default function Dashboard({view="agents",reference,requestId}:{view?:Wor
   return()=>{active=false;clearTimeout(timer);};
  },[smartOwner,pendingHash,busy,showOperation]);
  async function connect(){
-  setBusy(true);setError("");
+  setBusy(true);setError("");setNotice("");
   try{const {connectOwner}=await import("./wallet");await connectOwner();await refresh();}
   catch(failure){setError(errorMessage(failure));}finally{setBusy(false);}
  }
+ async function switchNetwork(){
+  setBusy(true);setError("");setNotice("");
+  try{const {switchToAevum}=await import("./wallet");await switchToAevum();setNotice("Your wallet is on Aevum Testnet.");}
+  catch(failure){setError(errorMessage(failure));}finally{setBusy(false);}
+ }
  async function reviewSmartAccount(){
-  setBusy(true);setError("");
+  setBusy(true);setError("");setNotice("");
   try{const {previewSmartAccount}=await import("./smart-wallet");setPreview(await previewSmartAccount());}
   catch(failure){setError(errorMessage(failure));}finally{setBusy(false);}
  }
@@ -156,12 +161,15 @@ export default function Dashboard({view="agents",reference,requestId}:{view?:Wor
  }
  const unavailableAgent=listing.unavailable?.find(agent=>reference && (agent.id.toLowerCase()===reference.toLowerCase() || agent.agentId.toLowerCase()===reference.toLowerCase()));
  const selector=view==="console"||view==="history";
- return <WorkspaceShell view={view} owner={listing.owner} mode={listing.mode} busy={busy} treasuryId={data?.treasury.id} onConnect={connect} onDisconnect={disconnect}>
+ return <WorkspaceShell view={view} owner={listing.owner} mode={listing.mode} busy={busy} treasuryId={data?.treasury.id} onConnect={connect} onDisconnect={disconnect} onSwitchNetwork={listing.mode==="live"&&(listing.owner||loginRequired)?switchNetwork:undefined}>
   {listing.unavailable?.length?<div className="alert alert-error" role="status"><span>{listing.unavailable.length} agent vault{listing.unavailable.length===1?"":"s"} could not be verified. Healthy agents remain available.</span><Link className="text-button" href="/agents">View agents</Link></div>:null}
   {error?<div className="alert alert-error" role="alert"><span>{error}</span><button className="text-button" disabled={busy} onClick={()=>void refresh()}>Retry</button></div>:null}
   {notice?<div className="alert alert-success" role="status"><Icon name="check" size={17}/><span>{notice}</span><button className="icon-button" aria-label="Dismiss notification" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>:null}
   {smartOwner&&operation?<SmartOperationNotice operation={operation} busy={busy} onCheck={checkOperation} onDismiss={()=>setOperation(null)}/>:null}
-  {loading?<div className="loading-workspace" role="status"><span className="loading-spinner"/>Loading your agents…</div>:loginRequired?<WalletWelcome busy={busy} onConnect={connect} onPreview={smartAccounts?reviewSmartAccount:undefined} onActivate={activate} preview={preview} onCancel={()=>{setPreview(null);setError("");}}/>:error && !listing.owner?<section className="empty-agents"><h2>The workspace is unavailable.</h2><p>Your agents could not be loaded. Retry the connection before creating or paying from a treasury.</p><button className="primary-button" disabled={busy} onClick={()=>void refresh()}>Reload workspace</button></section>:view==="agents"?<AgentsGrid agents={listing.agents} unavailable={listing.unavailable}/>:view==="setup"?<><div className="workspace-heading"><div><h1>Create an agent treasury.</h1><p>{smartOwner?"Your Aevum smart account will own this vault.":"A dedicated vault and a spending mandate, owned by your wallet."}</p></div><Link className="text-button" href="/agents">Back to agents</Link></div><SetupView onCreated={created} smartOwner={smartOwner?listing.owner:undefined} pending={operation?.status==="pending"} onOperation={showOperation}/></>:<>
+  {loading?<div className="loading-workspace" role="status"><span className="loading-spinner"/>Loading your agents…</div>:loginRequired?<WalletWelcome busy={busy} onConnect={connect} onPreview={smartAccounts?reviewSmartAccount:undefined} onActivate={activate} preview={preview} onCancel={()=>{setPreview(null);setError("");}}/>:error && !listing.owner?<section className="empty-agents"><h2>The workspace is unavailable.</h2><p>Your agents could not be loaded. Retry the connection before creating or paying from a treasury.</p><button className="primary-button" disabled={busy} onClick={()=>void refresh()}>Reload workspace</button></section>:view==="agents"?<AgentsGrid agents={listing.agents} unavailable={listing.unavailable}/>:view==="setup"?<>
+   <div className="workspace-heading"><div><h1>Create an agent treasury.</h1><p>{smartOwner?"Your Aevum smart account will own this vault.":"A dedicated vault and a spending mandate, owned by your wallet."}</p></div><Link className="text-button" href="/agents">Back to agents</Link></div>
+   <SetupView onCreated={created} owner={listing.owner} smartAccount={smartOwner} busy={busy} setBusy={setBusy} pending={operation?.status==="pending"} onOperation={showOperation}/>
+  </>:<>
    {selector?<><div className="workspace-heading"><div><h1>{view==="console"?"Payment console.":"Request history."}</h1><p>{view==="console"?"Request a real governed payment for the selected agent.":"Inspect requests, policy decisions, and settlement receipts for one agent."}</p></div></div><AgentSelector agents={listing.agents} selectedId={data?.treasury.id} page={view}/></>:null}
    {data?view==="agent"?<AgentOverview data={data} busy={treasuryBusy} onControl={control} onSave={savePolicy} onRefresh={refresh}/>:view==="console"?<RequestComposer key={data.treasury.id} services={data.services} policy={data.policy} availableBalance={spendableBalance(data)} treasuryId={data.treasury.id} disabled={!data.treasury.active||data.treasury.paused||data.policy.validUntil*1000<=Date.now()} busy={busy} mode={data.mode} onRequest={request}/>:<><div className="history-page-actions"><span>{data.treasury.agentName}</span><button className="secondary-button" disabled={busy} onClick={()=>void refresh()}><Icon name="refresh" size={16}/>Refresh history</button><Link className="primary-button" href={`/console?treasuryId=${data.treasury.id}`}>Request a payment</Link></div><PaymentHistory payments={data.payments} mode={data.mode} busy={busy} onProcess={process} initialSelectedId={requestId} treasuryId={data.treasury.id}/></>:<section className="empty-agents"><span className="setup-icon"><Icon name="grid" size={28}/></span><h2>{unavailableAgent?"Agent verification unavailable.":listing.agents.length?reference?"Agent unavailable.":"Choose an agent to continue.":"Create an agent first."}</h2><p>{unavailableAgent?unavailableAgent.message:listing.agents.length?reference?"This wallet does not have an agent matching that link. Choose one of your agents to open its treasury.":"Choose an agent above to view its requests and spending permissions.":"Each payment belongs to an agent with its own treasury and mandate."}</p><Link className="primary-button" href={listing.agents.length || unavailableAgent?"/agents":"/setup"}>{listing.agents.length || unavailableAgent?"View your agents":"Create agent"}</Link></section>}
   </>}

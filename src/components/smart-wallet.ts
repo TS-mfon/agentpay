@@ -3,7 +3,7 @@
 import { createKernelAccount } from "@zerodev/sdk";
 import { getEntryPoint } from "@zerodev/sdk/constants";
 import { signerToEcdsaValidator } from "@zerodev/ecdsa-validator";
-import { BaseError, createWalletClient, custom, encodeFunctionData, erc20Abi,
+import { BaseError, createWalletClient, encodeFunctionData, erc20Abi,
   formatEther, getAddress, http, isHash, toHex, type Address, type Hex } from "viem";
 import { createBundlerClient, formatUserOperationRequest, getUserOperationHash } from "viem/account-abstraction";
 import type { OwnerIntent, OwnerMandate, OwnerOperationStatus } from "../core/owner-operations";
@@ -14,7 +14,7 @@ import { assertAevum, createSmartOwnerVerifier, deriveOwnerAccount, kernelVersio
   qdayPublicClient, qdaySmartAccount } from "../integrations/qday-smart-account";
 import { api } from "./api";
 import type { DashboardData, OwnerAction } from "./types";
-import { browserWalletProvider, connectBrowserWallet, type TreasurySetup } from "./wallet";
+import { connectBrowserWallet, type TreasurySetup } from "./wallet";
 
 const operationsPath = "/api/owner/user-operations";
 const rpc = () => qdayPublicClient();
@@ -40,13 +40,13 @@ export async function previewSmartAccount(): Promise<SmartAccountPreview> {
 }
 
 async function browserAccount(expectedOwner: string, expectedSigner?: string) {
-  const { account: signer } = await connectBrowserWallet();
+  const { account: signer, transport } = await connectBrowserWallet();
   if (expectedSigner && !sameAddress(signer, expectedSigner)) throw new Error("Connect the browser wallet that controls this smart account.");
   const client = rpc();
   await assertAevum(client);
   const address = getAddress(await deriveOwnerAccount(client, signer));
   if (!sameAddress(address, expectedOwner)) throw new Error("Connect the browser wallet that controls this smart account.");
-  const wallet = createWalletClient({ account: signer, chain: aevum, transport: custom(browserWalletProvider()) });
+  const wallet = createWalletClient({ account: signer, chain: aevum, transport });
   const validator = await signerToEcdsaValidator(client, { signer: wallet, entryPoint, kernelVersion,
     validatorAddress: qdaySmartAccount.validator });
   const account = await createKernelAccount(client, { entryPoint, kernelVersion, plugins: { sudo: validator },

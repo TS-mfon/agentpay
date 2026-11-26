@@ -11,17 +11,9 @@ import {
   type Address,
   type EIP1193Provider,
 } from "viem";
+import { aevum as chain } from "../integrations/aevum-config";
 import { api } from "./api";
 import type { DashboardData, OwnerAction, Policy } from "./types";
-const chain = {
-  id: 44005,
-  name: "QDay Aevum Testnet",
-  nativeCurrency: { name: "Test QDAY", symbol: "tQDAY", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc-test.qday.info"] } },
-  blockExplorers: {
-    default: { name: "Aevum Explorer", url: "https://explorer-test.qday.info" },
-  },
-} as const;
 const vaultAbi = parseAbi([
   "function owner() view returns(address)",
   "function token() view returns(address)",
@@ -32,25 +24,70 @@ const vaultAbi = parseAbi([
   "function revokeAgent(bytes32 agentId)",
   "function configureAgent(bytes32 agentId,uint256 policyVersion,bytes32 mandateHash,uint256 perPaymentLimit,uint256 weeklyBudget,uint256 totalBudget,uint256 validUntil,address[] recipients)",
 ]);
-export function browserWalletProvider(): EIP1193Provider {
+function browserWallet() {
   const ethereum = (window as unknown as { ethereum?: EIP1193Provider })
     .ethereum;
   if (!ethereum)
     throw new Error("Install a browser wallet to connect to Aevum Testnet.");
-  return ethereum;
+  const transport = custom(ethereum);
+  return { wallet: createWalletClient({ chain, transport }), transport };
 }
-export async function connectBrowserWallet() {
-  const wallet = createWalletClient({ chain, transport: custom(browserWalletProvider()) });
-  const [account] = await wallet.requestAddresses();
-  if (!account) throw new Error("Select a wallet account to continue.");
-  try {
-    await wallet.switchChain({ id: chain.id });
-  } catch (error) {
-    if ((error as { code?: number }).code !== 4902) throw error;
-    await wallet.addChain({ chain });
-    await wallet.switchChain({ id: chain.id });
+
+function networkErrorCodes(error: unknown) {
+  const codes = new Set<number>();
+  const seen = new Set<object>();
+  const pending = [error];
+  for (const item of pending) {
+    if (!item || typeof item !== "object" || seen.has(item)) continue;
+    seen.add(item);
+    const { code, cause, data } = item as { code?: unknown; cause?: unknown; data?: { originalError?: unknown } };
+    if (typeof code === "number") codes.add(code);
+    pending.push(cause, data?.originalError);
   }
-  return { wallet, account };
+  return codes;
+}
+
+const switchManually = "Select QDay Aevum Testnet in your wallet, then try again. If it’s missing, use the wallet setup guide.";
+
+async function selectAevum(wallet: ReturnType<typeof browserWallet>["wallet"]) {
+  let adding = false;
+  try {
+    if (await wallet.getChainId() === chain.id) return false;
+    try {
+      await wallet.switchChain({ id: chain.id });
+    } catch (error) {
+      const codes = networkErrorCodes(error);
+      if (!codes.has(4902) || codes.has(4001) || codes.has(-32002)) throw error;
+      adding = true;
+      await wallet.addChain({ chain });
+      adding = false;
+      if (await wallet.getChainId() === chain.id) return true;
+      await wallet.switchChain({ id: chain.id });
+    }
+    if (await wallet.getChainId() === chain.id) return true;
+  } catch (error) {
+    const codes = networkErrorCodes(error);
+    if (codes.has(4001)) throw new Error(adding ? "Adding Aevum Testnet was declined. Approve it in your wallet to continue."
+      : "The network switch was declined. Approve it in your wallet to continue.");
+    if (codes.has(-32002)) throw new Error("Open your wallet to finish the pending network request.");
+    if (codes.has(4100)) throw new Error("Connect your wallet to AgentPay and try switching the network again.");
+    throw new Error(switchManually, { cause: error });
+  }
+  throw new Error(switchManually);
+}
+
+export async function switchToAevum() {
+  await selectAevum(browserWallet().wallet);
+}
+
+export async function connectBrowserWallet() {
+  const { wallet, transport } = browserWallet();
+  const [selected] = await wallet.requestAddresses();
+  if (!selected) throw new Error("Select a wallet account to continue.");
+  const switched = await selectAevum(wallet);
+  const [account] = switched ? await wallet.getAddresses() : [selected];
+  if (!account) throw new Error("Select a wallet account on Aevum Testnet to continue.");
+  return { wallet, transport, account };
 }
 export async function connectOwner(): Promise<string> {
   const { wallet, account } = await connectBrowserWallet();
@@ -194,11 +231,14 @@ export interface TreasurySetup {
 }
 export async function prepareTreasury(
   input: TreasurySetup,
+  ownerAddress: string,
   createNew: boolean,
   progress: (message: string) => void,
   onVaultCreated?: (address: string) => void,
 ): Promise<string> {
   const { wallet, account } = await connectBrowserWallet();
+  if (account.toLowerCase() !== ownerAddress.toLowerCase())
+    throw new Error("Connect the wallet you used to sign in.");
   const config = await api<{
     mode: string;
     token: string;

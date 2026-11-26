@@ -16,15 +16,17 @@ const stepCopy = [
   ["A final look before you create.", "Review your agent's authority. Your wallet confirms every on-chain setup transaction."],
 ] as const;
 
-export default function SetupView({ onCreated, smartOwner, pending, onOperation }: {
+export default function SetupView({ onCreated, owner, smartAccount, busy, setBusy, pending, onOperation }: {
   onCreated: (data: DashboardData) => Promise<void>;
-  smartOwner?: string;
+  owner: string;
+  smartAccount: boolean;
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
   pending?: boolean;
   onOperation: (operation: OwnerOperationStatus | null) => Promise<void>;
 }) {
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [createNew, setCreateNew] = useState(true);
   const [progress, setProgress] = useState("");
@@ -66,20 +68,20 @@ export default function SetupView({ onCreated, smartOwner, pending, onOperation 
         setCreatedVault(address);
         setCreateNew(false);
       };
-      if (smartOwner) {
+      if (smartAccount) {
         const { smartTreasurySetup } = await import("./smart-wallet");
-        await onOperation(await smartTreasurySetup(input, smartOwner, createNew, setProgress, vaultCreated));
+        await onOperation(await smartTreasurySetup(input, owner, createNew, setProgress, vaultCreated));
         return;
       }
       const { prepareTreasury } = await import("./wallet");
-      const treasuryId = await prepareTreasury(input, createNew, setProgress, vaultCreated);
+      const treasuryId = await prepareTreasury(input, owner, createNew, setProgress, vaultCreated);
       setForm((current) => ({ ...current, treasuryId }));
       setCreateNew(false);
       setProgress("Registering the confirmed treasury and mandate…");
       const created = await api<DashboardData>("/api/owner/setup", { ...input, treasuryId });
       await onCreated(created);
     } catch (failure) {
-      if (smartOwner) {
+      if (smartAccount) {
         const saved = await api<OwnerOperationStatus | null>("/api/owner/user-operations").catch(() => null);
         if (saved?.status === "pending") await onOperation(saved);
       }
@@ -171,7 +173,7 @@ export default function SetupView({ onCreated, smartOwner, pending, onOperation 
                 {!createNew ? (
                   <label>Aevum treasury vault address
                     <input required placeholder="0x…" value={form.treasuryId} onChange={(event) => update("treasuryId", event.target.value)} />
-                    <small>{smartOwner ? "Your smart account must own this vault." : "The connected wallet must own this vault."} Its token and ownership are checked on-chain.</small>
+                    <small>{smartAccount ? "Your smart account must own this vault." : "The connected wallet must own this vault."} Its token and ownership are checked on-chain.</small>
                   </label>
                 ) : null}
               </>
@@ -195,7 +197,7 @@ export default function SetupView({ onCreated, smartOwner, pending, onOperation 
                 {!createNew ? <p className="review-vault break-address">Vault: {form.treasuryId}</p> : null}
                 <div className="setup-explainer"><Icon name="wallet" size={22} />
                   <div><strong>{createNew ? "Two wallet confirmations" : "One wallet confirmation"}</strong>
-                    <p>{smartOwner ? createNew ? "Your browser wallet pays tQDAY to deploy the vault. Your smart account pays tQDAY to authorize the agent." : "Your smart account pays tQDAY to authorize the agent." : `${createNew ? "Create the vault, then authorize your agent. " : "Authorize the agent in your existing vault. "}You need tQDAY for gas. Fund with tUSD8 after setup.`}</p>
+                    <p>{smartAccount ? createNew ? "Your browser wallet pays tQDAY to deploy the vault. Your smart account pays tQDAY to authorize the agent." : "Your smart account pays tQDAY to authorize the agent." : `${createNew ? "Create the vault, then authorize your agent. " : "Authorize the agent in your existing vault. "}You need tQDAY for gas. Fund with tUSD8 after setup.`}</p>
                     <a href="https://faucet.qday.info/en" target="_blank" rel="noreferrer">Get testnet tokens <Icon name="external" size={13} /></a></div>
                 </div>
               </div>

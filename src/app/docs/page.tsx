@@ -153,13 +153,14 @@ export default function Docs() {
           <h2>Set up the owner treasury</h2>
           <p>You retain custody controls. The agent receives a scoped API identity and can request permitted purchases without holding the owner’s private key.</p>
           <ol>
-            <li><strong>Connect your owner wallet.</strong> Sign the one-time sign-in challenge. Use a wallet with tQDAY for Aevum gas. AgentPay does not request the private key.</li>
+            <li><strong>Connect your owner wallet.</strong> Approve any requests to add or switch to Aevum Testnet, then sign the one-time sign-in challenge. Use a wallet with tQDAY for Aevum gas.</li>
             <li><strong>Name the agent and write its mandate.</strong> Describe the authorized task, services, and evidence requirements. Numeric limits and recipient addresses remain separate hard controls.</li>
             <li><strong>Set payment, weekly, and lifetime budgets.</strong> The per-payment cap must not exceed the weekly budget, and the weekly budget must not exceed the lifetime budget. Amounts use six-decimal tUSD8 precision.</li>
             <li><strong>Approve actual recipients and choose a vault.</strong> Create a new Aevum vault or register a compatible owner-controlled vault. The token, owner, mandate, version, limits, expiry, and configured recipients must match the on-chain state.</li>
             <li><strong>Review and sign.</strong> Your wallet deploys/configures the vault; AgentPay verifies and registers it. If deployment succeeds but configuration fails, retain the vault address and resume with the existing-vault option.</li>
             <li><strong>Fund and connect the agent.</strong> Add tUSD8 on the selected agent’s detail page, then issue that agent’s credential. The <a href="https://faucet.qday.info/en" target="_blank" rel="noreferrer">official faucet</a> supplies test assets; tQDAY pays gas and tUSD8 funds purchases.</li>
           </ol>
+          <p>Select <strong>Aevum Testnet</strong> in the workspace header to request a switch. If your wallet requires manual setup, add <strong>QDay Aevum Testnet</strong> with chain ID <code>44005</code>, RPC <code>https://rpc-test.qday.info</code>, currency symbol <code>tQDAY</code> with 18 decimals, and explorer <code>https://explorer-test.qday.info</code>. Select the network in your wallet, then retry.</p>
           <p>On a preview with smart accounts enabled, choose <strong>Create smart account</strong>, send tQDAY to the displayed Aevum address, and activate it. The browser wallet pays for vault deployment. The smart account owns the vault and pays tQDAY for configuration and controls. Load that account with tUSD8 to fund the vault. Withdrawals return to the smart account.</p>
           <p>A useful mandate states the permitted purpose, relevant service categories, approved evidence, and exclusions. For example: “Spend on research APIs and datasets for this market research task. Reject unrelated services and invoices that do not identify the purchased research.”</p>
         </section>

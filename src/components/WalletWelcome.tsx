@@ -26,14 +26,14 @@ export default function WalletWelcome({ busy, onConnect, onPreview, onActivate, 
           <button className="text-button" disabled={busy} onClick={onCancel}>Back</button>
         </div>
       </div> : <>
-        <p>Connect your owner wallet and sign a one-time message. Your agents, their vaults, and every payment stay connected to your wallet.</p>
+        <p>Connect your owner wallet, approve any Aevum Testnet prompts, then sign a one-time message.</p>
         <ol className="welcome-steps"><li>Connect your wallet</li><li>Create an agent treasury</li><li>Fund and connect your agent</li></ol>
         <div className="welcome-wallet-actions">
           <button className="primary-button" disabled={busy} onClick={() => void onConnect()}><Icon name="wallet" size={18}/>{busy ? "Waiting for wallet…" : "Connect wallet"}</button>
           {onPreview ? <button className="secondary-button" disabled={busy} onClick={() => void onPreview()}>Create smart account</button> : null}
         </div>
         <p className="welcome-note">You keep custody. AgentPay never asks for your private key.</p>
-        <Link className="text-button" href="/docs#owner-setup">New to Aevum? Read the setup guide</Link>
+        <Link className="text-button" href="/docs#owner-setup">Aevum wallet setup guide</Link>
       </>}
     </div>
   </section>;

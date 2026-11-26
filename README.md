@@ -99,7 +99,7 @@ Owners can register several separate agent vaults. The app binds one agent ident
 
 ### Owner onboarding
 
-1. Connect an EVM browser wallet and switch to Aevum Testnet.
+1. Connect an EVM browser wallet and approve any prompts to add or switch to Aevum Testnet. The **Aevum Testnet** button in the workspace header also requests a switch.
 2. Sign an expiring, origin-bound wallet challenge to start an owner session.
 3. Open `/setup` and name the agent.
 4. Define its natural-language mandate and per-payment, weekly, and lifetime spending caps.

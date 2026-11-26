@@ -3,7 +3,7 @@ import { keccak256, toBytes } from "viem";
 import { policySchema } from "../../src/core/validation";
 import type { DashboardData } from "../../src/components/types";
 
-const external = vi.hoisted(() => ({ requestAddresses: vi.fn(), switchChain: vi.fn(), writeContract: vi.fn(), readContract: vi.fn(), waitForTransactionReceipt: vi.fn(), api: vi.fn() }));
+const external = vi.hoisted(() => ({ requestAddresses: vi.fn(), getChainId: vi.fn(), writeContract: vi.fn(), readContract: vi.fn(), waitForTransactionReceipt: vi.fn(), api: vi.fn() }));
 vi.mock("viem", async (original) => ({
   ...await original<typeof import("viem")>(),
   createWalletClient: () => external,
@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("window", { ethereum: { request: vi.fn() } });
   external.requestAddresses.mockResolvedValue([owner]);
-  external.switchChain.mockResolvedValue(undefined);
+  external.getChainId.mockResolvedValue(44005);
   external.writeContract.mockResolvedValue(txHash);
   external.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
   external.readContract.mockResolvedValue([1n]);
@@ -58,10 +58,16 @@ describe("owner mandate wallet consistency", () => {
       if (functionName === "token") return settlementAsset;
       return [2n];
     });
-    await expect(prepareTreasury({ ...policy, treasuryId: vault, agentName: "Research" }, false, vi.fn())).resolves.toBe(vault);
+    await expect(prepareTreasury({ ...policy, treasuryId: vault, agentName: "Research" }, owner, false, vi.fn())).resolves.toBe(vault);
     const submitted = external.writeContract.mock.calls[0][0];
     expect(submitted.args[2]).toBe(keccak256(toBytes(policySchema.parse(policy).mandate)));
     expect(submitted.args[1]).toBe(3n);
+  });
+  it("stops treasury deployment when the selected wallet differs from the signed-in owner", async () => {
+    external.requestAddresses.mockResolvedValue([vault]);
+    await expect(prepareTreasury({ ...policy, treasuryId: "", agentName: "Research" }, owner, true, vi.fn()))
+      .rejects.toThrow("Connect the wallet you used to sign in.");
+    expect(external.api).not.toHaveBeenCalled();
   });
   it("uses a fresh on-chain version after an owner transaction succeeded but API registration did not", async () => {
     external.readContract.mockResolvedValue([2n]);
