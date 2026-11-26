@@ -14,7 +14,7 @@ const address = z
   .regex(/^0x[0-9a-fA-F]{40}$/)
   .refine((value) => isAddress(value, { strict: true }) && !/^0x0{40}$/i.test(value), "Address checksum is invalid or address is zero")
   .transform((s) => getAddress(s));
-const amount = z
+export const tokenAmountSchema = z
   .string()
   .regex(
     /^(0|[1-9]\d{0,12})(\.\d{1,6})?$/,
@@ -30,7 +30,7 @@ const amount = z
 export const paymentSchema = z
   .object({
     recipient: address,
-    amount,
+    amount: tokenAmountSchema,
     service: z.string().trim().min(1).max(120),
     purpose: z.string().trim().min(3).max(1000),
     evidence: z.string().trim().max(4000).default(""),
@@ -40,9 +40,9 @@ export const paymentSchema = z
 export const policySchema = z
   .object({
     mandate: z.string().trim().min(10).max(4000),
-    perPaymentLimit: amount,
-    weeklyBudget: amount,
-    totalBudget: amount,
+    perPaymentLimit: tokenAmountSchema,
+    weeklyBudget: tokenAmountSchema,
+    totalBudget: tokenAmountSchema,
     validUntil: z.number().int().positive().max(4102444800),
     recipients: z.array(address).min(1).max(30),
   })

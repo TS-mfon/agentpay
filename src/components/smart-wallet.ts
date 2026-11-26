@@ -7,14 +7,14 @@ import { BaseError, createWalletClient, encodeFunctionData, erc20Abi,
   formatEther, getAddress, http, isHash, toHex, type Address, type Hex } from "viem";
 import { createBundlerClient, formatUserOperationRequest, getUserOperationHash } from "viem/account-abstraction";
 import type { OwnerIntent, OwnerMandate, OwnerOperationStatus } from "../core/owner-operations";
-import { decimal, parsePolicy, sameAddress, units } from "../core/validation";
+import { decimal, parsePolicy, sameAddress, tokenAmountSchema, units } from "../core/validation";
 import { aevum, TUSD8_ADDRESS, vaultAbi } from "../integrations/aevum-config";
-import { agentIdFor, ownerCalls } from "../integrations/aevum-owner-actions";
+import { agentIdFor, ownerCalls, ownerOperationHash } from "../integrations/aevum-owner-actions";
 import { assertAevum, createSmartOwnerVerifier, deriveOwnerAccount, kernelVersion, ownerAccountSalt, qdayBundlerClient,
   qdayPublicClient, qdaySmartAccount } from "../integrations/qday-smart-account";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import type { DashboardData, OwnerAction } from "./types";
-import { connectBrowserWallet, type TreasurySetup } from "./wallet";
+import { connectBrowserWallet, requestWalletApproval, type TreasurySetup } from "./wallet";
 
 const operationsPath = "/api/owner/user-operations";
 const rpc = () => qdayPublicClient();
@@ -30,21 +30,52 @@ export interface SmartAccountPreview {
   deployed: boolean;
 }
 
+export interface SmartAccountBalance {
+  token: string;
+  gas: string;
+}
+
+const accountTokenBalance = (client: ReturnType<typeof rpc>, owner: Address) => client.readContract({
+  address: TUSD8_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [owner],
+});
+
+export async function readSmartAccountBalance(owner: string): Promise<SmartAccountBalance> {
+  const client = rpc();
+  const address = getAddress(owner);
+  try {
+    const [gas, token] = await Promise.all([client.getBalance({ address }), accountTokenBalance(client, address)]);
+    return { token: decimal(token), gas: formatEther(gas) };
+  } catch (error) {
+    throw new Error("QDay couldn’t load the smart-account balances. Refresh balances to try again.", { cause: error });
+  }
+}
+
+async function ownerAddress(client: ReturnType<typeof rpc>, signer: Address) {
+  try {
+    await assertAevum(client);
+    return getAddress(await deriveOwnerAccount(client, signer));
+  } catch (error) {
+    throw new Error("QDay couldn’t look up your smart account. Check your connection and try again.", { cause: error });
+  }
+}
+
 export async function previewSmartAccount(): Promise<SmartAccountPreview> {
   const { account: signer } = await connectBrowserWallet();
   const client = rpc();
-  await assertAevum(client);
-  const address = getAddress(await deriveOwnerAccount(client, signer));
-  const [balance, code] = await Promise.all([client.getBalance({ address }), client.getCode({ address })]);
-  return { address, signer, gasBalance: formatEther(balance), deployed: !!code && code !== "0x" };
+  const address = await ownerAddress(client, signer);
+  try {
+    const [balance, code] = await Promise.all([client.getBalance({ address }), client.getCode({ address })]);
+    return { address, signer, gasBalance: formatEther(balance), deployed: !!code && code !== "0x" };
+  } catch (error) {
+    throw new Error("QDay couldn’t check your smart account. Open smart account again to retry.", { cause: error });
+  }
 }
 
 async function browserAccount(expectedOwner: string, expectedSigner?: string) {
   const { account: signer, transport } = await connectBrowserWallet();
   if (expectedSigner && !sameAddress(signer, expectedSigner)) throw new Error("Connect the browser wallet that controls this smart account.");
   const client = rpc();
-  await assertAevum(client);
-  const address = getAddress(await deriveOwnerAccount(client, signer));
+  const address = await ownerAddress(client, signer);
   if (!sameAddress(address, expectedOwner)) throw new Error("Connect the browser wallet that controls this smart account.");
   const wallet = createWalletClient({ account: signer, chain: aevum, transport });
   const validator = await signerToEcdsaValidator(client, { signer: wallet, entryPoint, kernelVersion,
@@ -58,17 +89,22 @@ async function browserAccount(expectedOwner: string, expectedSigner?: string) {
 
 type BrowserAccount = Awaited<ReturnType<typeof browserAccount>>;
 async function prepareOperation({ account, client }: BrowserAccount, calls: { to: Address; data: Hex }[],
-  funding?: { from: Address; amount: bigint }) {
+  fundingAmount?: bigint) {
   const bundler = qdayBundlerClient(client);
-  const [chainId, entryPoints, gas] = await Promise.all([
-    bundler.getChainId(), bundler.getSupportedEntryPoints(), client.getBalance({ address: account.address }),
-  ]);
-  if (chainId !== aevum.id || !entryPoints.some(point => sameAddress(point, qdaySmartAccount.entryPoint)))
-    throw new Error("QDay’s bundler is unavailable for Aevum EntryPoint v0.7.");
+  const [gas, token] = await Promise.all([
+    client.getBalance({ address: account.address }),
+    fundingAmount === undefined ? undefined : accountTokenBalance(client, account.address),
+  ]).catch(error => {
+    throw new Error("QDay couldn’t verify the smart-account balances. Try again shortly.", { cause: error });
+  });
   if (gas === 0n) throw new Error("Add tQDAY to the smart account before continuing.");
-  if (funding && await client.readContract({ address: TUSD8_ADDRESS, abi: erc20Abi,
-    functionName: "balanceOf", args: [funding.from] }) < funding.amount)
-    throw new Error("Add tUSD8 to the smart account before funding this treasury.");
+  if (fundingAmount !== undefined && token !== undefined && token < fundingAmount)
+    throw new Error("Add tUSD8 to the smart account or enter a smaller amount. It currently holds " + decimal(token) + " tUSD8.");
+  const [chainId, entryPoints] = await Promise.all([bundler.getChainId(), bundler.getSupportedEntryPoints()]).catch(error => {
+    throw new Error("QDay’s transaction service couldn’t be reached. Try again shortly.", { cause: error });
+  });
+  if (chainId !== aevum.id || !entryPoints.some(point => sameAddress(point, qdaySmartAccount.entryPoint)))
+    throw new Error("QDay’s transaction service is unavailable for this account. Try again shortly.");
   const signedClient = createBundlerClient({ account, client, chain: aevum,
     transport: http(qdaySmartAccount.bundlerUrl, { timeout: 10_000, retryCount: 0 }) });
   let prepared: Awaited<ReturnType<typeof signedClient.prepareUserOperation>>;
@@ -77,11 +113,13 @@ async function prepareOperation({ account, client }: BrowserAccount, calls: { to
   } catch (error) {
     if (error instanceof BaseError && /prefund|AA21/.test(error.details || error.message))
       throw new Error("Add more tQDAY to the smart account to cover Aevum gas.");
-    throw new Error("QDay could not estimate this operation. Check the smart account’s balances and treasury settings.");
+    throw new Error("QDay couldn’t estimate this operation. Refresh the treasury and check the smart account’s balances.", { cause: error });
   }
   const maxCost = (prepared.callGasLimit + prepared.verificationGasLimit + prepared.preVerificationGas) * prepared.maxFeePerGas;
   if (gas < maxCost) throw new Error("Add more tQDAY to the smart account to cover Aevum gas.");
-  return { ...prepared, signature: await account.signUserOperation(prepared) };
+  const signature = await requestWalletApproval(() => account.signUserOperation(prepared),
+    "Your wallet couldn’t sign the smart-account operation. Check the wallet and try again.");
+  return { ...prepared, signature };
 }
 
 async function deployOwnerAccount(connected: BrowserAccount) {
@@ -120,12 +158,13 @@ export async function activateSmartAccount(preview: SmartAccountPreview) {
   if (!await createSmartOwnerVerifier(client).isCurrent(account.address, signer))
     throw new Error("The deployed smart account does not match this browser wallet.");
   const challenge = await api<{ nonce: string; message: string }>(`/api/auth/nonce?address=${account.address}&signer=${signer}`);
-  const signature = await account.signMessage({ message: challenge.message });
+  const signature = await requestWalletApproval(() => account.signMessage({ message: challenge.message }),
+    "Your wallet couldn’t sign in to the smart account. Check the selected wallet and try again.");
   await api("/api/auth/verify", { address: account.address, nonce: challenge.nonce, signature });
 }
 
-export function currentOwnerOperation() {
-  return api<OwnerOperationStatus | null>(operationsPath);
+export function currentOwnerOperation(hash?: Hex) {
+  return api<OwnerOperationStatus | null>(hash ? operationsPath + "?userOperationHash=" + hash : operationsPath);
 }
 
 export function resumeOwnerOperation(userOperationHash: Hex, rebroadcast = false) {
@@ -138,25 +177,32 @@ export async function submitOwnerAction(connected: BrowserAccount, intent: Owner
   if (pending?.status === "pending") return pending;
   const normalized: OwnerIntent = "policy" in intent ? { ...intent, policy: parsePolicy(intent.policy) } : intent;
   const signed = await prepareOperation(connected, ownerCalls(normalized, account.address), normalized.action === "fund"
-    ? { from: account.address, amount: units(normalized.amount) } : undefined);
+    ? units(normalized.amount) : undefined);
   if (signed.factory || signed.factoryData) throw new Error("Activate the smart account before managing a treasury.");
   const operation = { sender: account.address, callData: signed.callData, signature: signed.signature,
     nonce: toHex(signed.nonce), callGasLimit: toHex(signed.callGasLimit), verificationGasLimit: toHex(signed.verificationGasLimit),
     preVerificationGas: toHex(signed.preVerificationGas), maxFeePerGas: toHex(signed.maxFeePerGas),
     maxPriorityFeePerGas: toHex(signed.maxPriorityFeePerGas) };
-  return api<OwnerOperationStatus>(operationsPath, { command: "submit", intent: normalized, operation });
+  try {
+    return await api<OwnerOperationStatus>(operationsPath, { command: "submit", intent: normalized, operation });
+  } catch (error) {
+    if (error instanceof ApiError && error.status < 500) throw error;
+    const hash = ownerOperationHash(operation);
+    const saved = await currentOwnerOperation(hash).catch(() => null);
+    if (saved) return saved;
+    throw new Error("AgentPay couldn’t confirm submission. Check the smart-account operation and vault balance before retrying.", { cause: error });
+  }
 }
 
 export async function smartWalletControl(data: DashboardData, action: OwnerAction | "policy", policy: OwnerMandate, amount?: string) {
+  const amountResult = action === "fund" || action === "withdraw" ? tokenAmountSchema.safeParse(amount) : undefined;
+  if (amountResult && !amountResult.success) throw new Error("Enter a positive tUSD8 amount with up to six decimal places.");
   const connected = await browserAccount(data.owner);
   const treasuryId = data.treasury.id;
   const agentId = data.treasury.agentId as Hex;
   const base = { treasuryId, agentId };
-  if (action === "fund" || action === "withdraw") {
-    if (!amount || !/^(0|[1-9]\d{0,12})(\.\d{1,6})?$/.test(amount) || units(amount) === 0n)
-      throw new Error("Enter a positive tUSD8 amount with up to six decimals.");
-    return submitOwnerAction(connected, { ...base, action, amount: decimal(units(amount)) });
-  }
+  if ((action === "fund" || action === "withdraw") && amountResult?.success)
+    return submitOwnerAction(connected, { ...base, action, amount: decimal(units(amountResult.data)) });
   const [current] = await connected.client.readContract({ address: getAddress(treasuryId), abi: vaultAbi,
     functionName: "agentConfig", args: [agentId] });
   if (action === "pause" || action === "revoke")

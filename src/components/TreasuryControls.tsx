@@ -1,48 +1,84 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Icon from "./Icon";
 import Dialog from "./Dialog";
-import { api } from "./api";
+import { api, errorMessage } from "./api";
 import { scopedPath } from "./workspace-model";
 import { formatMoney, shorten } from "./view-model";
 import type { Credential, DashboardData, OwnerAction } from "./types";
+import type { SmartAccountBalance } from "./smart-wallet";
+import { tokenAmountSchema } from "../core/validation";
+
+export type TreasuryDialog = "fund" | "withdraw" | "key" | "revoke" | null;
+
 export default function TreasuryControls({
   data,
   busy,
+  operationPending,
+  dialog,
+  onDialog,
   onControl,
   onRefresh,
   onRenew,
 }: {
   data: DashboardData;
   busy: boolean;
+  operationPending: boolean;
+  dialog: TreasuryDialog;
+  onDialog: (dialog: TreasuryDialog) => void;
   onControl: (action: OwnerAction, amount?: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   onRenew?: () => void;
 }) {
   const expired = data.policy.validUntil * 1000 <= Date.now();
-  const [dialog, setDialog] = useState<
-    "fund" | "withdraw" | "key" | "revoke" | null
-  >(null);
+  const disabled = busy || operationPending;
   const [amount, setAmount] = useState("10");
   const [error, setError] = useState("");
   const [key, setKey] = useState<Credential | null>(null);
   const [keyBusy, setKeyBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  function open(value: typeof dialog) {
-    setDialog(value);
+  const [balances, setBalances] = useState<SmartAccountBalance | null>(null);
+  const [balanceError, setBalanceError] = useState("");
+  const [balanceRefresh, setBalanceRefresh] = useState(0);
+  const fundingAccount = dialog === "fund" && data.ownerAccountType === "smart" ? data.treasury.owner : undefined;
+  useEffect(() => {
+    if (!fundingAccount) return;
+    let active = true;
+    setBalances(null);
+    setBalanceError("");
+    async function load(address: string) {
+      try {
+        const { readSmartAccountBalance } = await import("./smart-wallet");
+        const next = await readSmartAccountBalance(address);
+        if (active) setBalances(next);
+      } catch (failure) {
+        if (active) setBalanceError(errorMessage(failure));
+      }
+    }
+    void load(fundingAccount);
+    return () => { active = false; };
+  }, [fundingAccount, balanceRefresh]);
+  function open(value: TreasuryDialog) {
     setError("");
     setAmount("10");
     setKey(null);
     setCopied(false);
+    onDialog(value);
+  }
+  function close() {
+    if (!busy && !keyBusy) open(null);
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (disabled) return;
     setError("");
     try {
-      if (dialog === "fund" || dialog === "withdraw")
-        await onControl(dialog, amount);
-      else if (dialog === "revoke") await onControl("revoke");
-      setDialog(null);
+      if (dialog === "fund" || dialog === "withdraw") {
+        const input = tokenAmountSchema.safeParse(amount.trim());
+        if (!input.success) throw new Error("Enter a positive tUSD8 amount with up to six decimal places.");
+        await onControl(dialog, input.data);
+      } else if (dialog === "revoke") await onControl("revoke");
+      open(null);
     } catch (failure) {
       setError(
         failure instanceof Error
@@ -104,21 +140,21 @@ export default function TreasuryControls({
       <div className="controls-row">
         <button
           className="secondary-button"
-          disabled={busy}
+          disabled={disabled}
           onClick={() => open("fund")}
         >
           <Icon name="plus" size={17} /> Add funds
         </button>
         <button
           className="secondary-button"
-          disabled={busy}
+          disabled={disabled}
           onClick={() => open("withdraw")}
         >
           <Icon name="wallet" size={17} /> Withdraw unused funds
         </button>
         <button
           className="secondary-button"
-          disabled={busy}
+          disabled={disabled}
           onClick={() =>
             data.treasury.paused && expired ? onRenew?.() : void directControl(data.treasury.paused ? "resume" : "pause")
           }
@@ -135,7 +171,7 @@ export default function TreasuryControls({
         </button>
         <button
           className="text-button danger-text"
-          disabled={busy}
+          disabled={disabled}
           onClick={() =>
             expired
               ? onRenew?.()
@@ -167,7 +203,7 @@ export default function TreasuryControls({
                   ? "Revoke agent authority"
                   : "Agent API credential"
           }
-          onClose={() => setDialog(null)}
+          onClose={close}
         >
           {dialog === "key" ? (
             <div className="stack-form">
@@ -226,26 +262,39 @@ export default function TreasuryControls({
                       ? "This changes the simulated treasury balance. No tokens move on Aevum."
                       : dialog === "fund"
                         ? data.ownerAccountType === "smart"
-                          ? "Load your smart account with tUSD8 before funding this vault. Your smart account pays tQDAY for gas."
+                          ? "Send tUSD8 and tQDAY to the smart-account address below on Aevum Testnet. Add funds then transfers tUSD8 to the vault."
                           : "Your wallet will transfer tUSD8 to the treasury on Aevum Testnet."
                         : data.ownerAccountType === "smart"
                           ? "Unused tUSD8 goes back to your smart account."
                           : "Your wallet will withdraw available tUSD8 to the treasury owner's address."}
                   </p>
-                  {data.ownerAccountType === "smart" ? <code className="break-address">{data.treasury.owner}</code> : null}
+                  {fundingAccount ? (
+                    <>
+                      <label>Smart account address
+                        <input className="break-address" value={fundingAccount} readOnly onFocus={(event) => event.target.select()} />
+                      </label>
+                      <p className="muted" role="status">
+                        {balances ? "Smart account balance: " + balances.token + " tUSD8 · " + balances.gas + " tQDAY for gas"
+                          : balanceError || "Checking smart-account balances on QDay…"}
+                      </p>
+                      <div className="welcome-wallet-actions">
+                        <a className="text-button" href="https://faucet.qday.info/en" target="_blank" rel="noreferrer">Get test tokens</a>
+                        <button className="text-button" type="button" disabled={busy} onClick={() => {setError("");setBalanceRefresh(current => current + 1);}}>Refresh balances</button>
+                      </div>
+                    </>
+                  ) : null}
                   <label>
                     Amount in tUSD8
                     <input
                       autoFocus
                       required
                       inputMode="decimal"
-                      pattern="[0-9]+(\.[0-9]{1,6})?"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                     />
                   </label>
                   <p className="muted">
-                    Available balance: {formatMoney(data.treasury.balance)}{" "}
+                    Vault balance: {formatMoney(data.treasury.balance)}{" "}
                     tUSD8
                   </p>
                 </>
@@ -255,11 +304,13 @@ export default function TreasuryControls({
                   {error}
                 </p>
               ) : null}
+              {operationPending ? <p className="muted" role="status">Close this dialog to check the pending operation.</p> : null}
               <div className="dialog-actions">
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => setDialog(null)}
+                  disabled={busy}
+                  onClick={close}
                 >
                   Cancel
                 </button>
@@ -267,7 +318,7 @@ export default function TreasuryControls({
                   className={
                     dialog === "revoke" ? "danger-button" : "primary-button"
                   }
-                  disabled={busy}
+                  disabled={disabled}
                 >
                   {busy
                     ? "Confirming…"
