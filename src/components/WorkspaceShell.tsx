@@ -3,14 +3,16 @@ import Icon from "./Icon";
 import { shorten } from "./view-model";
 import type { ReactNode } from "react";
 import type { WorkspaceView } from "./types";
+import { aevum } from "../integrations/aevum-config";
 const navigation=[
   ["agents","/agents","grid","Agents"],
   ["console","/console","send","Payment console"],
   ["history","/history","clock","Request history"],
   ["setup","/setup","plus","Create agent"],
 ] as const;
-export default function WorkspaceShell({view,owner,mode,busy,treasuryId,onConnect,onDisconnect,onSwitchNetwork,children}:{
+export default function WorkspaceShell({view,owner,smartOwner,mode,busy,treasuryId,onConnect,onDisconnect,onSwitchNetwork,children}:{
   view:WorkspaceView;owner:string;mode:"demo"|"live";busy:boolean;treasuryId?:string;
+  smartOwner:boolean;
   onConnect:()=>Promise<void>;onDisconnect:()=>Promise<void>;onSwitchNetwork?:()=>Promise<void>;children:ReactNode;
 }) {
  const current=treasuryId ? `?treasuryId=${encodeURIComponent(treasuryId)}` : "";
@@ -25,7 +27,10 @@ export default function WorkspaceShell({view,owner,mode,busy,treasuryId,onConnec
   <div className="main-shell"><header className="topbar"><span className="breadcrumb">AgentPay <span>/</span>{title}</span><div className="topbar-actions">
    {onSwitchNetwork ? <button type="button" className="environment-badge network-switch" disabled={busy} aria-label="Switch to Aevum Testnet" title="Switch to Aevum Testnet" onClick={()=>void onSwitchNetwork()}><Icon name="refresh" size={14}/>Aevum Testnet</button>
     : <span className="environment-badge"><span/>{mode==="demo"?"Demo · simulated":"Aevum Testnet"}</span>}
-   <Link className="workspace-docs-link" href="/docs">Docs</Link>{mode==="live" ? owner ? <><span className="wallet-button" title={owner}><Icon name="wallet" size={17}/>{shorten(owner)}</span><button className="text-button signout-button" disabled={busy} onClick={()=>void onDisconnect()}>Sign out</button></> : <button className="wallet-button wallet-connect" disabled={busy} onClick={()=>void onConnect()}><Icon name="wallet" size={17}/>{busy?"Connecting…":"Connect wallet"}</button> : null}</div></header>
+   <Link className="workspace-docs-link" href="/docs">Docs</Link>{mode==="live" ? owner ? <>
+    {smartOwner ? <a className="wallet-button" href={`${aevum.blockExplorers.default.url}/address/${owner}`} target="_blank" rel="noreferrer" title={owner}><Icon name="wallet" size={17}/>QDay smart account <span>{shorten(owner)}</span></a>
+     : <span className="wallet-button" title={owner}><Icon name="wallet" size={17}/>{shorten(owner)}</span>}
+    <button className="text-button signout-button" disabled={busy} onClick={()=>void onDisconnect()}>Sign out</button></> : <button className="wallet-button wallet-connect" disabled={busy} onClick={()=>void onConnect()}><Icon name="wallet" size={17}/>{busy?"Connecting…":"Connect wallet"}</button> : null}</div></header>
    <main id="workspace" className="workspace">{children}<footer className="workspace-footer"><span>AgentPay</span><p>Intelligent mandates. Enforced budgets. Inspectable payments.</p><a href="https://explorer-test.qday.info/" target="_blank" rel="noreferrer">Aevum explorer <Icon name="external" size={13}/></a></footer></main>
   </div>
  </div>;

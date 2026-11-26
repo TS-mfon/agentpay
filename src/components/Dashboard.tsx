@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkspaceShell from "./WorkspaceShell";
 import WalletWelcome from "./WalletWelcome";
+import Dialog from "./Dialog";
+import SmartAccountActivation from "./SmartAccountActivation";
 import AgentsGrid from "./AgentsGrid";
 import AgentOverview from "./AgentOverview";
 import AgentSelector from "./AgentSelector";
@@ -28,18 +30,20 @@ export default function Dashboard({view="agents",reference,requestId}:{view?:Wor
  const [notice,setNotice]=useState("");
  const [smartAccounts,setSmartAccounts]=useState(false);
  const [preview,setPreview]=useState<SmartAccountPreview|null>(null);
+ const [activationError,setActivationError]=useState("");
  const [operation,setOperation]=useState<OwnerOperationStatus|null>(null);
  const smartOwner=listing.ownerAccountType==="smart";
+ const canCreateSmartAccount=listing.mode==="live"&&!smartOwner&&Boolean(listing.owner||loginRequired);
  const treasuryBusy=busy||operation?.status==="pending";
  useEffect(()=>setNotice(""),[view,reference]);
  useEffect(()=>{
-  if(!loginRequired)return;
+  if(!canCreateSmartAccount)return;
   let active=true;
   api<{mode:string;smartAccounts?:object}>("/api/config").then(config=>{
    if(active)setSmartAccounts(config.mode==="live"&&!!config.smartAccounts);
   }).catch(()=>{if(active)setSmartAccounts(false);});
   return()=>{active=false;};
- },[loginRequired]);
+ },[canCreateSmartAccount]);
  const showOperation=useCallback(async(result:OwnerOperationStatus|null)=>{
   setOperation(result);
   if(!result||result.status==="pending")return;
@@ -88,15 +92,19 @@ export default function Dashboard({view="agents",reference,requestId}:{view?:Wor
   catch(failure){setError(errorMessage(failure));}finally{setBusy(false);}
  }
  async function reviewSmartAccount(){
-  setBusy(true);setError("");setNotice("");
+  setBusy(true);setError("");setNotice("");setActivationError("");
   try{const {previewSmartAccount}=await import("./smart-wallet");setPreview(await previewSmartAccount());}
   catch(failure){setError(errorMessage(failure));}finally{setBusy(false);}
  }
  async function activate(){
   if(!preview)return;
-  setBusy(true);setError("");
+  setBusy(true);setError("");setActivationError("");
   try{const {activateSmartAccount}=await import("./smart-wallet");await activateSmartAccount(preview);setPreview(null);await refresh();}
-  catch(failure){setError(errorMessage(failure));}finally{setBusy(false);}
+  catch(failure){(listing.owner?setActivationError:setError)(errorMessage(failure));}finally{setBusy(false);}
+ }
+ function cancelSmartAccount(){
+  if(busy)return;
+  setPreview(null);setError("");setActivationError("");
  }
  async function checkOperation(rebroadcast:boolean){
   if(!pendingHash)return;
@@ -161,12 +169,21 @@ export default function Dashboard({view="agents",reference,requestId}:{view?:Wor
  }
  const unavailableAgent=listing.unavailable?.find(agent=>reference && (agent.id.toLowerCase()===reference.toLowerCase() || agent.agentId.toLowerCase()===reference.toLowerCase()));
  const selector=view==="console"||view==="history";
- return <WorkspaceShell view={view} owner={listing.owner} mode={listing.mode} busy={busy} treasuryId={data?.treasury.id} onConnect={connect} onDisconnect={disconnect} onSwitchNetwork={listing.mode==="live"&&(listing.owner||loginRequired)?switchNetwork:undefined}>
+ return <WorkspaceShell view={view} owner={listing.owner} smartOwner={smartOwner} mode={listing.mode} busy={busy} treasuryId={data?.treasury.id} onConnect={connect} onDisconnect={disconnect} onSwitchNetwork={listing.mode==="live"&&(listing.owner||loginRequired)?switchNetwork:undefined}>
   {listing.unavailable?.length?<div className="alert alert-error" role="status"><span>{listing.unavailable.length} agent vault{listing.unavailable.length===1?"":"s"} could not be verified. Healthy agents remain available.</span><Link className="text-button" href="/agents">View agents</Link></div>:null}
   {error?<div className="alert alert-error" role="alert"><span>{error}</span><button className="text-button" disabled={busy} onClick={()=>void refresh()}>Retry</button></div>:null}
   {notice?<div className="alert alert-success" role="status"><Icon name="check" size={17}/><span>{notice}</span><button className="icon-button" aria-label="Dismiss notification" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>:null}
+  {smartAccounts&&canCreateSmartAccount&&listing.owner&&!loading&&(view==="agents"||view==="setup") ? <section className="smart-account-option" aria-label="QDay smart accounts">
+   <div><strong>QDay smart account</strong><p>Use a smart account to own a new treasury and resume spending in one transaction.</p></div>
+   <button type="button" className="secondary-button" disabled={busy} onClick={()=>void reviewSmartAccount()}>Create smart account</button>
+  </section>:null}
+  {preview&&listing.owner&&!smartOwner ? <Dialog title="Set up a QDay smart account" onClose={cancelSmartAccount}>
+   <p className="muted">Existing treasuries stay with your browser wallet. Connect that wallet again to manage them.</p>
+   {activationError?<p className="form-error" role="alert">{activationError}</p>:null}
+   <SmartAccountActivation preview={preview} busy={busy} onActivate={activate} onCancel={cancelSmartAccount}/>
+  </Dialog>:null}
   {smartOwner&&operation?<SmartOperationNotice operation={operation} busy={busy} onCheck={checkOperation} onDismiss={()=>setOperation(null)}/>:null}
-  {loading?<div className="loading-workspace" role="status"><span className="loading-spinner"/>Loading your agents…</div>:loginRequired?<WalletWelcome busy={busy} onConnect={connect} onPreview={smartAccounts?reviewSmartAccount:undefined} onActivate={activate} preview={preview} onCancel={()=>{setPreview(null);setError("");}}/>:error && !listing.owner?<section className="empty-agents"><h2>The workspace is unavailable.</h2><p>Your agents could not be loaded. Retry the connection before creating or paying from a treasury.</p><button className="primary-button" disabled={busy} onClick={()=>void refresh()}>Reload workspace</button></section>:view==="agents"?<AgentsGrid agents={listing.agents} unavailable={listing.unavailable}/>:view==="setup"?<>
+  {loading?<div className="loading-workspace" role="status"><span className="loading-spinner"/>Loading your agents…</div>:loginRequired?<WalletWelcome busy={busy} onConnect={connect} onPreview={smartAccounts&&canCreateSmartAccount?reviewSmartAccount:undefined} onActivate={activate} preview={preview} onCancel={cancelSmartAccount}/>:error && !listing.owner?<section className="empty-agents"><h2>The workspace is unavailable.</h2><p>Your agents could not be loaded. Retry the connection before creating or paying from a treasury.</p><button className="primary-button" disabled={busy} onClick={()=>void refresh()}>Reload workspace</button></section>:view==="agents"?<AgentsGrid agents={listing.agents} unavailable={listing.unavailable}/>:view==="setup"?<>
    <div className="workspace-heading"><div><h1>Create an agent treasury.</h1><p>{smartOwner?"Your Aevum smart account will own this vault.":"A dedicated vault and a spending mandate, owned by your wallet."}</p></div><Link className="text-button" href="/agents">Back to agents</Link></div>
    <SetupView onCreated={created} owner={listing.owner} smartAccount={smartOwner} busy={busy} setBusy={setBusy} pending={operation?.status==="pending"} onOperation={showOperation}/>
   </>:<>

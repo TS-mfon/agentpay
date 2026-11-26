@@ -17,11 +17,7 @@ const smartAccounts = {
   validator: "0x845ADb2C711129d4f3966735eD98a9F09fC4cE57",
 };
 
-async function openWalletWelcome(page: Page, enabled: boolean) {
-  await page.route("**/api/owner/agents", (route) => route.fulfill({
-    status: 401,
-    json: { success: false, error: { code: "UNAUTHORIZED", message: "Connect your owner wallet." } },
-  }));
+async function mockSmartAccountConfig(page: Page, enabled: boolean) {
   await page.route("**/api/config", (route) => route.fulfill({
     json: {
       success: true,
@@ -37,6 +33,14 @@ async function openWalletWelcome(page: Page, enabled: boolean) {
       },
     },
   }));
+}
+
+async function openWalletWelcome(page: Page, enabled: boolean) {
+  await page.route("**/api/owner/agents", (route) => route.fulfill({
+    status: 401,
+    json: { success: false, error: { code: "UNAUTHORIZED", message: "Connect your owner wallet." } },
+  }));
+  await mockSmartAccountConfig(page, enabled);
   await page.goto("/setup");
   return page.getByRole("region", { name: "Start with your wallet." });
 }
@@ -122,6 +126,38 @@ test("wallet onboarding keeps the standard connection without the smart-account 
 
   await expect(welcome.getByRole("button", { name: "Connect wallet", exact: true })).toBeVisible();
   await expect(welcome.getByRole("button", { name: "Create smart account", exact: true })).toHaveCount(0);
+});
+
+test("a signed-in wallet can open smart-account setup without signing out", async ({ page }) => {
+  const methods = await mockBrowserWallet(page);
+  const unexpectedRequests = await mockAccountPreview(page);
+  await mockSmartAccountConfig(page, true);
+  await page.route("**/api/owner/agents", route => route.fulfill({
+    json: { success: true, data: { mode: "live", owner: walletAddress, ownerAccountType: "wallet", agents: [] } },
+  }));
+  await page.goto("/agents");
+  await expect(page.getByRole("heading", { name: "Your agents." })).toBeVisible();
+  await page.getByRole("button", { name: "Create smart account", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Set up a QDay smart account" });
+  await expect(dialog.getByText(predictedAddress, { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Activate smart account" })).toBeVisible();
+  await expect(dialog.getByText(/existing treasuries stay with your browser wallet/i)).toBeVisible();
+  await dialog.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your agents." })).toBeVisible();
+  expect(methods.every(method => !/sign|send/i.test(method))).toBe(true);
+  expect(unexpectedRequests).toEqual([]);
+});
+
+test("treasury setup identifies the active smart account and links to the explorer", async ({ page }) => {
+  await mockSmartAccountConfig(page, true);
+  await page.route("**/api/owner/user-operations", route => route.fulfill({ json: { success: true, data: null } }));
+  await page.route("**/api/owner/agents", route => route.fulfill({
+    json: { success: true, data: { mode: "live", owner: predictedAddress, ownerAccountType: "smart", ownerSigner: walletAddress, agents: [] } },
+  }));
+  await page.goto("/setup");
+  await expect(page.getByRole("link", { name: /QDay smart account/ })).toHaveAttribute("href", `${explorerUrl}/address/${predictedAddress}`);
+  await expect(page.getByText("Your Aevum smart account will own this vault.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create smart account", exact: true })).toHaveCount(0);
 });
 
 test("creating a smart account without a browser wallet reports how to proceed", async ({ page }) => {
