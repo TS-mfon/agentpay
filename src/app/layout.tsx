@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import ExecutorWake from "../components/ExecutorWake";
 import "./globals.css";
 export const metadata: Metadata = {
   title: "AgentPay — Governed agent payments",
@@ -11,7 +12,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <ExecutorWake />
+      </body>
     </html>
   );
 }

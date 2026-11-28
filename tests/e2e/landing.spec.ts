@@ -1,5 +1,17 @@
 import { test, expect } from "@playwright/test";
 
+test("a browser visit asks the server to wake the payment executor", async ({page}) => {
+  const [response] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/executor/wake", { timeout: 7000 }),
+    page.goto("/"),
+  ]);
+  const ping = response.request();
+  expect(response.status()).toBe(204);
+  expect(ping.method()).toBe("POST");
+  expect(ping.postData()).toBeNull();
+  expect(new URL(ping.url()).origin).toBe(new URL(page.url()).origin);
+});
+
 test("landing presents AgentPay and links to the real onboarding and docs", async ({page}) => {
   await page.goto("/");
   await expect(page.getByRole("heading", {name:"Agents in Motion"})).toBeVisible();

@@ -45,7 +45,7 @@ Submit only these fields:
 
 The body is limited to 16KB and unknown fields are rejected. Settlement is tUSD8 on Aevum chain 44005; do not send a `token`, `owner`, `treasuryId`, or forged approval field.
 
-Persist the returned request `id` separately from any `transactionHash`. Poll status every 15–30 seconds, backing off with jitter on transport, 429, or 503 failures. GitHub Actions normally checks queued work every five minutes, with variable scheduling and finality latency. If a request stalls, share its ID, status, attempt count, expiry, and any retry metadata with the owner or operator.
+Persist the returned request `id` separately from any `transactionHash`. Poll status every 15–30 seconds, backing off with jitter on transport, 429, or 503 failures. Configured deployments ask GitHub to start the executor after payment submission. Scheduling and finality can delay processing. If a request stalls, share its ID, status, attempt count, expiry, and any retry metadata with the owner or operator.
 
 A request expires within one hour or at policy expiry, whichever is sooner. `createdAt` and `expiresAt` use ISO UTC. An already-submitted unresolved Aevum transaction may still settle, including after the request's local expiry; its funds remain committed until reconciliation resolves it.
 

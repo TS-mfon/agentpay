@@ -130,7 +130,7 @@ export default function Docs() {
             <li>Request a purchase for an approved recipient using a stable purchase key.</li>
             <li>Poll the request until settlement, rejection, or another terminal outcome. Verify the Aevum receipt before reporting paid.</li>
           </ol>
-          <div className={styles.callout}><strong>Requests run asynchronously.</strong>A stored request is not a payment. The executor normally checks the queue every five minutes; policy finality and Aevum confirmation may take additional runs.</div>
+          <div className={styles.callout}><strong>Requests run asynchronously.</strong>Configured deployments ask the executor to start after a submission. GitHub can delay scheduled checks, and GenLayer finality and Aevum confirmation take additional time.</div>
           <CodeBlock code={readExample} label="Read your agent’s payment history" useOrigin />
         </section>
         <section id="owner-pages" className={styles.section}>

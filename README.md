@@ -603,7 +603,7 @@ Create the protected `agentpay-testnet` environment used by [.github/workflows/e
 | `AEVUM_EXECUTOR_ADDRESS` | Expected settlement account |
 | `GENLAYER_CONTRACT_ADDRESS` | Governance contract to evaluate mandates |
 
-The workflow checks bounded work about every five minutes and supports manual dispatch. Scheduled runs use four state-processing operations per run; manual test/recovery dispatch can select 4, 10, or 20. These are state transitions, not a guarantee of completed payments. The runner closes MongoDB and RPC connections on completion or failure.
+The executor has a five-minute cron. Scheduled runs allow up to 20 state-processing operations, and manual runs can select 4, 10, or 20. A worker can revisit retries that become due within 150 seconds of its start, subject to its operation cap. The runner closes MongoDB and RPC connections on completion or failure.
 
 The [queue scheduler](src/core/queue.ts) expires eligible unexecuted requests without RPC and selects work only when both its ownership lease and `retryAt` are due. A leased request does not hide independent due inspections or reconciliation. New shared-contract governance writes remain serialized while an earlier write is unresolved, and an uncertain executor transaction blocks preparation of another settlement transaction to prevent nonce reuse.
 
@@ -611,7 +611,7 @@ Transient failures use durable exponential backoff from 15 seconds up to five mi
 
 The [worker RPC boundary](src/server/governance-rpc-proxy.ts) starts a temporary forwarder on `127.0.0.1` inside its own process. It forwards JSON-RPC requests unchanged to the configured HTTPS GenLayer endpoint, sanitizes error details, refuses redirects, bounds request/response bodies to 1 MiB, and aborts upstream request/body I/O after 15 seconds. Its network lifetime is 240 seconds; a 360-second process watchdog bounds SDK waits that outlive network cancellation. This requires no dedicated server and does not replace the web runtime's fetch or environment configuration. Cancellation cannot undo a transaction already accepted remotely, so the signed journal remains the recovery authority.
 
-GitHub scheduling and governance finality can delay requests beyond one schedule interval. The API does not automatically dispatch a run for each submitted request. A pending response should direct the user to status/history, not promise immediate execution. Repeated generic failures, unavailable governance state, or a stalled queue require operator diagnosis.
+GitHub scheduling and governance finality can delay requests beyond one schedule interval. A live deployment can also [dispatch the executor on a browser visit or payment submission](VERCEL.md) when work is ready. Track pending requests in status or history. Repeated generic failures, unavailable governance state, or a stalled queue require operator diagnosis.
 
 ### Deploy Vercel
 

@@ -106,6 +106,7 @@ export interface RateWindow {
 export interface State {
   revision: number;
   workerLease?: { token: string; expiresAt: number };
+  executorWakeAfter?: number;
   treasuries: Treasury[];
   policies: Policy[];
   payments: Payment[];
