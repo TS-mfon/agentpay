@@ -19,10 +19,21 @@ Agent request → deterministic validation → GenLayer judgment → finalized a
 | Payment network | QDay Aevum Testnet, chain `44005` |
 | Governance environment | GenLayer Studio development network, chain `61997` |
 | App | [Open the testnet preview](https://agentpay-roan.vercel.app) |
+| Payment explorer | [AgentPay Scan](https://agentpay-roan.vercel.app/scan) |
 | Agent integration | [API reference](docs/api.md), [MCP adapter](mcp/README.md), [agent skill](skills/agentpay/SKILL.md) |
 | Source | [TS-mfon/agentpay](https://github.com/TS-mfon/agentpay), MIT license |
 
 The deployed app defaults to live operation. It does not substitute simulated balances, approvals, or transfers when live infrastructure is unavailable. Testnet assets are used throughout this release. The executor is a trusted cross-chain component; Aevum does not cryptographically verify GenLayer consensus. Read the [security and trust model](#security-and-trust-model) before funding a treasury.
+
+## AgentPay Scan
+
+Scan is the public payment-request explorer. Browse requests newest first, filter by status, or paste a full request ID to open its detail page. You can copy an ID from any request card. Active requests refresh while the page is visible. [Production Scan](https://agentpay-roan.vercel.app/scan) · [QDay smart-account Scan](https://agentpay-lqffdswjo-gen-daves-projects.vercel.app/scan)
+
+The detail page shows the exact tUSD8 amount, submission time, progress, and public GenLayer verdict. New decisions include a short public explanation. When settlement is verified, **View payment on Aevum** opens the matching transfer. Wallet sign-in gives owners access to the mandate, budgets, private evidence, and full decision explanation.
+
+Follow the demo's **0.001 tUSD8** Research Scout payment from its request to the verified transfer. [Demo request in Scan](https://agentpay-roan.vercel.app/scan/0x79b6d1a0b71c31e0e579af0a826b24e38f79c12bb61a24f13ce90073e6dc93d5) · [Aevum transfer](https://explorer-test.qday.info/tx/0x16b0bf1c34a6068b4d0e64ae42ec50c5c98393306879f0ff32b8f062bf801e81)
+
+Set `AGENTPAY_SCAN_FEED=false` to switch Scan to public lookup by request ID. [Scan API and configuration](docs/api.md#public-scan)
 
 ## Verified end-to-end payments
 
@@ -40,6 +51,7 @@ Judges and agents can inspect the [complete evidence record](docs/evidence.md), 
 
 ## Contents
 
+- [AgentPay Scan](#agentpay-scan)
 - [Verified end-to-end payments](#verified-end-to-end-payments)
 - [The problem and product](#the-problem-and-product)
 - [Capabilities and user journey](#capabilities-and-user-journey)
@@ -85,12 +97,14 @@ The owner then configures enforceable caps, such as 10 tUSD8 per payment and 40 
 
 | Surface | Responsibility |
 | --- | --- |
-| `/` | Explain the product through the animated landing page and link to setup/docs |
+| `/` | Explain the product through the animated landing page and link to Scan, setup, and docs |
 | `/agents` | List the connected owner's registered agents as real treasury cards |
 | `/agent/[id]` | Inspect one agent's mandate, vault, balances, and owner controls; `id` is its vault address |
 | `/setup` | Create or register an owner-controlled vault through a guided setup flow |
 | `/console` | Submit a payment for a selected agent using its current mandate and approved recipients |
 | `/history` | Inspect request history, decisions, failures, and settlement references for the selected agent |
+| `/scan` | Browse and filter public payment requests |
+| `/scan/<request-id>` | Look up request progress, the public verdict, and the verified settlement receipt |
 | `/docs` | Read owner onboarding and the complete agent integration guide |
 | `/docs/skill` | Download the maintained AgentPay `SKILL.md` |
 | `/workspace`, `/agent`, `/sgents` | Compatibility entry points to the agents area |
@@ -664,7 +678,7 @@ Do not submit personal addresses, children's names, bank credentials, unredacted
 | Execution latency | Asynchronous Actions scheduling and finality; no immediate-payment SLA |
 | Queue throughput | Due independent work can progress, but unresolved shared-governance writes and uncertain executor nonces still gate new writes; batches and scheduling remain bounded |
 | Application persistence | CAS-versioned aggregate ledger; a bounded prototype, not a high-throughput ledger |
-| History capacity | 1000 stored requests across the prototype; no server-side cursor pagination or archival service |
+| History capacity | 1,000 stored requests across the prototype. Public Scan paginates the ledger with a cursor. |
 | Merchant identity | Owner-approved addresses; no independent merchant/invoice verification |
 | Sign-in availability | Public challenges have wallet-wide active-slot limits; stronger requester binding/throttling is needed before production |
 | Service fulfillment | Payment receipt only; no general proof-of-delivery or dispute protocol |
