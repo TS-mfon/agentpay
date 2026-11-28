@@ -4,14 +4,13 @@ import styles from "./docs.module.css";
 
 export const metadata: Metadata = { title: "AgentPay Docs — Build with governed payments", description: "Set up an agent treasury, integrate the AgentPay API and MCP server, understand spending controls, and verify Aevum receipts." };
 const links = [
-  ["quickstart", "Get started"], ["owner-pages", "Owner pages"], ["owner-setup", "Owner onboarding"], ["available-funds", "Available funds"], ["evidence-privacy", "Evidence disclosure"], ["authentication", "Agent credentials"], ["payment-api", "Payment API"], ["lifecycle", "Execution lifecycle"], ["receipts", "Verify a receipt"], ["recovery", "Errors and recovery"], ["mcp", "MCP integration"], ["skill", "Agent skill"], ["controls", "Owner controls"], ["architecture", "Architecture and trust"], ["limits", "Current limitations"],
+  ["quickstart", "Get started"], ["owner-pages", "Owner pages"], ["owner-setup", "Owner onboarding"], ["available-funds", "Owner balances"], ["evidence-privacy", "Evidence disclosure"], ["authentication", "Agent credentials"], ["payment-api", "Payment API"], ["lifecycle", "Execution lifecycle"], ["receipts", "Verify a receipt"], ["recovery", "Errors and recovery"], ["mcp", "MCP integration"], ["skill", "Agent skill"], ["controls", "Owner controls"], ["architecture", "Architecture and trust"], ["limits", "Current limitations"],
 ];
 const apiRows = [
-  ["GET", "/api/v1/treasury", "Authorized vault/agent, raw and available funds, pending reservations and spending authority"],
-  ["GET", "/api/v1/policy", "Natural-language mandate, version, hard limits, approved recipients, expiry"],
   ["POST", "/api/v1/payments", "Validate and queue an asynchronous tUSD8 purchase"],
-  ["GET", "/api/v1/payments/:id", "Original request, decision, explanation, execution state, and receipt"],
-  ["GET", "/api/v1/payments", "Newest-first payment and decision history for the authorized treasury"],
+  ["GET", "/api/v1/payments/:id", "Payment status and Aevum settlement references"],
+  ["GET", "/api/v1/payments", "Newest-first history for the credential’s vault"],
+  ["GET", "/api/v1/services/research?paymentId=:id", "Sample dataset and receipt for a settled Research API payment"],
 ];
 const fields = [
   ["recipient", "Required", "Approved 0x EVM address (40 hexadecimal characters)"],
@@ -24,19 +23,19 @@ const fields = [
 const statuses = [
   ["queued", "Pending", "Request is stored and awaits the executor"],
   ["evaluating", "Pending", "Policy evaluation is being submitted"],
-  ["awaiting_finality", "Pending", "A decision reference exists; finalized successful consensus is still required"],
+  ["awaiting_finality", "Pending", "The evaluation is waiting for finalized consensus"],
   ["approved", "Pending", "Finalized approval passed reference checks; funds have not yet settled"],
   ["executing", "Pending", "Signed Aevum transaction is being submitted or reconciled"],
-  ["settled", "Terminal", "Aevum confirms the payment and its on-chain event"],
-  ["rejected", "Terminal", "Policy denied the purchase; inspect decisionReason"],
-  ["needs_information", "Terminal", "The request needs stronger evidence or clarification; revise under a new purchase key"],
+  ["settled", "Terminal", "Live payments have an Aevum receipt. Simulated payments report status"],
+  ["rejected", "Terminal", "The owner can inspect the denial in wallet-authenticated history"],
+  ["needs_information", "Terminal", "Ask the owner to review the explanation before revising the purchase"],
   ["expired", "Terminal", "Request, approval, or mandate authority expired or was invalidated"],
-  ["failed", "Terminal", "Evaluation or execution failed; inspect error and saved references"],
+  ["failed", "Terminal", "Ask the owner to inspect the failure and reconcile any Aevum transaction"],
 ];
 const readExample = String.raw`export AGENTPAY_BASE_URL="https://YOUR_APP_ORIGIN"
 # Set AGENTPAY_API_KEY privately in your agent runtime first.
 curl --silent --show-error --fail-with-body \
-  "$AGENTPAY_BASE_URL/api/v1/treasury" \
+  "$AGENTPAY_BASE_URL/api/v1/payments" \
   --header "Authorization: Bearer $AGENTPAY_API_KEY"`;
 const requestExample = `# Set APPROVED_RECIPIENT to a real address allowed by the owner.
 # Save this exact payload and purchase key before the first submission.
@@ -66,7 +65,7 @@ const responseExample = `{
     "id": "<32-byte request ID returned by the API>",
     "status": "queued",
     "policyVersion": 1,
-    "requestHash": "<hash binding this request to its mandate>",
+    "idempotencyKey": "research-job-2026-001",
     "expiresAt": "<request expiry timestamp>"
   }
 }`;
@@ -82,8 +81,6 @@ const receiptExample = `{
     "status": "settled",
     "policyVersion": 1,
     "requestHash": "<purchase binding hash>",
-    "mandateHash": "<historical mandate hash>",
-    "decisionRef": "<GenLayer evaluation transaction hash>",
     "transactionHash": "<Aevum settlement transaction hash>"
   }
 }`;
@@ -120,7 +117,7 @@ export default function Docs() {
         <details className={styles.mobileNav}><summary>On this page</summary><Navigation /></details>
         <div className={styles.intro}>
           <h1>Give your agent financial authority.</h1>
-          <p>Connect an agent to a funded treasury. Define what it can buy. Track every decision and payment through one API.</p>
+          <p>Connect an agent to a funded treasury. Define what it can buy, submit a payment, and verify settlement on Aevum.</p>
           <div className={styles.introLinks}><a className={styles.launch} href="#quickstart">Start integrating</a><a href="/docs/skill" download="SKILL.md">Download agent skill</a></div>
         </div>
         <p className={styles.mobileTableHint}>Tables scroll sideways on smaller screens.</p>
@@ -129,16 +126,16 @@ export default function Docs() {
           <ol>
             <li>Create a vault-backed agent in <a href="/setup">agent setup</a>, then open its card from <a href="/agents">My agents</a>.</li>
             <li>Fund the selected vault with tUSD8 and issue its agent credential in the detail page’s Owner controls.</li>
-            <li>Retrieve the treasury and mandate from your agent runtime.</li>
+            <li>Confirm the intended recipient and approved amount with the treasury owner.</li>
             <li>Request a purchase for an approved recipient using a stable purchase key.</li>
             <li>Poll the request until settlement, rejection, or another terminal outcome. Verify the Aevum receipt before reporting paid.</li>
           </ol>
           <div className={styles.callout}><strong>Requests run asynchronously.</strong>A stored request is not a payment. The executor normally checks the queue every five minutes; policy finality and Aevum confirmation may take additional runs.</div>
-          <CodeBlock code={readExample} label="Read your agent treasury" useOrigin />
+          <CodeBlock code={readExample} label="Read your agent’s payment history" useOrigin />
         </section>
         <section id="owner-pages" className={styles.section}>
           <h2>One task per page</h2>
-          <p>Connect your owner wallet and open <a href="/agents">My agents</a>. Cards represent real registered agents, each backed by its own vault. Selecting a card opens that agent’s mandate, vault and owner controls; payment requests and history have their own pages.</p>
+          <p>Connect your owner wallet to view your registered agents. Each agent’s detail page shows its full mandate, per-payment limit, and weekly and lifetime budgets. Full decision explanations appear in the selected agent’s payment history. <a href="/agents">My agents</a></p>
           <Table headers={["Page", "Purpose"]} rows={[
             ["/agents", "Your registered agent cards, balances and activity"],
             ["/agent/:id", "Selected agent details, mandate, vault, credential and owner controls; id is its vault address"],
@@ -163,8 +160,8 @@ export default function Docs() {
           <p>A useful mandate states the permitted purpose, relevant service categories, approved evidence, and exclusions. For example: “Spend on research APIs and datasets for this market research task. Reject unrelated services and invoices that do not identify the purchased research.”</p>
         </section>
         <section id="available-funds" className={styles.section}>
-          <h2>Read what is actually available</h2>
-          <p>The vault’s raw <code>balance</code> can already be committed to requests. Use <code>availableBalance</code> and, when returned, <code>spendableBalance</code> when planning a purchase. Owner withdrawals, other requests and finality can change availability after a read; the API and vault recheck limits.</p>
+          <h2>Review available funds as the owner</h2>
+          <p>Sign in with the owner wallet to see what the vault can spend. Withdrawals, pending requests, and finality can change availability after a read. The API and vault recheck limits.</p>
           <Table headers={["Field", "Meaning"]} rows={[
             ["balance", "Raw tUSD8 held in the vault"],
             ["reservedBalance", "Pending commitments, including unresolved submitted transactions"],
@@ -173,12 +170,11 @@ export default function Docs() {
             ["availableTotalBudget", "Lifetime authority left after settled spending and commitments"],
             ["spendableBalance", "Minimum available balance, weekly budget and lifetime budget"],
           ]} />
-          <p>All these amounts are decimal strings. A request’s per-payment cap still applies independently. Missing fields on an older deployment mean unknown availability, not zero reservations. An unresolved transaction can still settle after local request expiry, so its funds remain reserved until reconciliation resolves it.</p>
-          <div className={styles.callout}><strong>An address is not a merchant identity.</strong>Use the selected policy’s approved recipients. If a card or address does not identify your intended provider, confirm that mapping with the owner before requesting funds. GenLayer evaluates purpose; it does not independently certify a vendor.</div>
+          <p>Amounts are decimal strings. The per-payment cap applies independently. Funds for an unresolved transaction remain reserved because it can still settle after local request expiry.</p>
         </section>
         <section id="evidence-privacy" className={styles.section}>
           <h2>Choose evidence you can disclose</h2>
-          <p>The owner’s mandate and request service, purpose and evidence are sent in GenLayer transaction arguments. Treat them as disclosed to governance infrastructure. Hashes recorded on Aevum do not make that input private.</p>
+          <p>GenLayer transaction arguments contain the owner’s mandate and the request’s service, purpose, and evidence. Those arguments and Aevum contract data remain public.</p>
           <p>Do not include credentials, personal names, children’s names or travel routes, home addresses, bank details, or unredacted private invoices. Send only the minimum non-sensitive context needed for the mandate. If required evidence cannot be shared appropriately, obtain clarification before submitting.</p>
           <p>An authorized nominal test must be identified as a test and must not claim that an actual invoice or delivered service exists. A testnet transfer does not establish that a real household bill was paid.</p>
         </section>
@@ -186,8 +182,8 @@ export default function Docs() {
           <h2>Authenticate your agent</h2>
           <p>Every agent endpoint requires <code>Authorization: Bearer &lt;credential&gt;</code>. An <code>ap_</code> credential binds one active agent to one treasury. Only its digest is stored; the owner sees a newly issued key once.</p>
           <p>Credentials expire after 30 days. Rotation immediately invalidates the previous key. Revocation invalidates agent access and on-chain spending authority. Store credentials privately in your agent runtime or MCP host configuration.</p>
-          <div className={styles.callout}><strong>Separate owner and agent access.</strong>The owner signs in with a wallet and manages funding, withdrawals, policy updates, and revocation. The agent API cannot perform these actions. Owner sessions use HttpOnly SameSite cookies and origin checks on mutations.</div>
-          <p>REST responses and MCP handler results use one envelope: <code>{'{ "success": true, "data": ... }'}</code> or <code>{'{ "success": false, "error": { "code": "...", "message": "..." } }'}</code>. Amounts are strings. Policy <code>validUntil</code> uses Unix seconds, while payment <code>createdAt</code> and <code>expiresAt</code> use ISO UTC. MCP also returns <code>authorizationExpiresAt</code>, an ISO rendering of validUntil; it is not the next worker-run time.</p>
+          <p>Owner sessions use HttpOnly SameSite cookies and origin checks on mutations. Agents use their own credential to submit purchases and read payment status and settlement references.</p>
+          <p>REST and MCP return <code>{'{ "success": true, "data": ... }'}</code> on success and <code>{'{ "success": false, "error": { "code": "...", "message": "..." } }'}</code> on failure. Amounts are strings. Payment <code>createdAt</code> and <code>expiresAt</code> use ISO UTC.</p>
         </section>
         <section id="payment-api" className={styles.section}>
           <h2>The payment API</h2>
@@ -198,7 +194,7 @@ export default function Docs() {
           <CodeBlock code={requestExample} label="Request an authorized purchase" />
           <p>The snippet requires your real allowed recipient, purchase purpose, and supporting evidence. Its <code>4</code> tUSD8 amount and key illustrate the request shape; adapt them to the authorized purchase before submitting.</p>
           <CodeBlock code={responseExample} label="Response shape (selected fields)" />
-          <p>The complete record includes treasury and agent IDs, the original purchase fields, <code>amountUnits</code>, policy version, mandate hash, request hash, created/expiry timestamps, state, execution attempts, and decision/transaction references when available. Signed raw transaction bytes and agent secrets are excluded.</p>
+          <p>The agent record includes request, vault and agent IDs, recipient, amount in decimal and base units, idempotency key, policy version, timestamps, status, and attempt count. Processing metadata and an Aevum transaction reference appear when available. A settled Aevum transaction also returns the purchase binding <code>requestHash</code>.</p>
         </section>
         <section id="lifecycle" className={styles.section}>
           <h2>Follow execution to completion</h2>
@@ -206,7 +202,7 @@ export default function Docs() {
           <p>Deterministic validation runs before GenLayer. The policy evaluator then judges purpose and evidence against the request’s mandate version. Only finalized, successful, matching approvals reach the executor. The Aevum contract independently rechecks spending authority.</p>
           <Table headers={["Status", "State", "Meaning"]} rows={statuses} />
           <CodeBlock code={pollExample} label="Retrieve payment status" />
-          <p>The GitHub Actions schedule is every five minutes and may be delayed by GitHub. A finalized approval and Aevum settlement may require more than one worker run. Requests expire within one hour or at policy expiry, whichever is sooner; this is not an instant-payment SLA. The API/MCP exposes no guaranteed next-run timestamp or worker-health heartbeat. If a request remains stalled across repeated expected cycles, share its ID, status, attempts, expiry and error with the owner/operator; do not submit another purchase to force progress.</p>
+          <p>GitHub Actions checks the queue on a five-minute schedule that can run late. Finalized approval and Aevum settlement may require multiple runs. Requests expire within one hour or at policy expiry, whichever is sooner. If a request stalls, share its ID, status, attempt count, expiry, and any retry metadata with the owner or operator.</p>
         </section>
         <section id="receipts" className={styles.section}>
           <h2>Verify what was paid</h2>
@@ -215,16 +211,15 @@ export default function Docs() {
           <Table headers={["Record field", "Compare with"]} rows={[
             ["transactionHash", "Successful Aevum transaction receipt on chain 44005"],
             ["treasuryId", "Vault emitting PaymentExecuted and token-transfer source"],
-            ["id", "PaymentExecuted requestId, distinct from either transaction hash"],
+            ["id", "PaymentExecuted requestId"],
             ["agentId / policyVersion", "Matching payment event fields"],
             ["recipient", "Payment event recipient and token-transfer destination"],
-            ["amountUnits", "Event integer amount; amount × 1000000 using exact arithmetic"],
-            ["requestHash / decisionRef", "Matching event purchase binding and GenLayer evaluation reference"],
-            ["mandateHash / policyVersion", "Matching finalized decision and historical mandate"],
+            ["amountUnits", "Integer amount in the event and tUSD8 transfer"],
+            ["requestHash", "Matching purchase binding in the vault event"],
           ]} />
           <p>MCP returns the record and references, and the backend verifies events before marking settlement. The MCP adapter does not independently query Aevum receipts. Use trusted explorer/RPC reads for independent verification and state when only backend-reported verification is available.</p>
           <p>For a settled request, retrieve <code>transactionHash</code> and open it on the <a href="https://explorer-test.qday.info/" target="_blank" rel="noreferrer">official Aevum explorer</a>. Confirm the receipt succeeded and the vault’s <code>PaymentExecuted</code> event matches the request ID, agent, recipient, amount, and policy version. Inspect the token transfer as supporting settlement evidence.</p>
-          <p>Compare the request’s <code>requestHash</code>, <code>mandateHash</code>, <code>policyVersion</code>, and <code>decisionRef</code> with its GenLayer decision. A verdict marked approved, a transaction hash alone, or an accepted-but-unfinalized GenLayer transaction does not establish a settled payment.</p>
+          <p>Use hashes from <code>executing</code> and <code>failed</code> records for reconciliation. Simulated payments can reach <code>settled</code> and omit the on-chain receipt.</p>
           <div className={styles.callout}><strong>A receipt proves a transfer.</strong>Invoice text is untrusted context. A transfer receipt does not independently prove merchant identity, service quality, or delivery.</div>
         </section>
         <section id="recovery" className={styles.section}>
@@ -232,22 +227,22 @@ export default function Docs() {
           <p>Persist the original purchase body and idempotency key before sending. Retrying identical content under the same key returns its existing request. Changing the content, including its applicable policy reference, produces <code>IDEMPOTENCY_CONFLICT</code>.</p>
           <p>A network timeout can happen after a request was saved. Retrieve its status or inspect history before retrying. MCP history offers up to 100 recent records but no cursor or key-search endpoint. If the ID cannot be recovered, resend only the exact persisted payload and key; never guess with a new purchase key. Using a new key creates a different purchase and can duplicate a payment. The executor persists signed transaction bytes before broadcast, reconciles an existing hash, and retries those same bytes.</p>
           <Table headers={["HTTP / code", "What to do"]} rows={[
-            ["403 / RECIPIENT_NOT_ALLOWED", "Read this agent’s policy recipients and confirm the intended payee; never substitute a catalog address"],
-            ["400 / INSUFFICIENT_BALANCE", "Inspect reserved and available funds; the owner may need to fund the vault or existing requests must finish"],
-            ["400 / PAYMENT_LIMIT", "Read the per-payment cap; do not split a purchase to evade it"],
-            ["400 / WEEKLY_BUDGET or TOTAL_BUDGET", "Read remaining authority and ask the owner to review the mandate"],
+            ["403 / RECIPIENT_NOT_ALLOWED", "Confirm the approved payee with the owner"],
+            ["400 / INSUFFICIENT_BALANCE", "Ask the owner to review available funds and pending commitments"],
+            ["400 / PAYMENT_LIMIT", "Ask the owner to review the purchase amount"],
+            ["400 / WEEKLY_BUDGET or TOTAL_BUDGET", "Ask the owner to review the budget"],
             ["400 / INVALID_REQUEST", "Correct fields and decimal precision; inspect the existing request before changing a purchase"],
             ["401 / UNAUTHORIZED", "Ask the owner for a current credential; check expiry, rotation, or revocation"],
             ["409 / IDEMPOTENCY_CONFLICT", "Retrieve the original request; preserve the original payload and key"],
             ["429 / RATE_LIMITED", "Back off with jitter; reduce polling and concurrent requests"],
             ["503 / SERVICE_UNAVAILABLE", "Wait and retry status reads; do not infer failed settlement from API availability"],
           ]} />
-          <p>Budget, balance, recipient, expiry, and suspended-authority failures are deterministic and cannot be overridden by favorable AI reasoning. If the evaluation needs information, obtain evidence and submit a revised purchase with a new key. Explain denials to the owner using the stored decision reason.</p>
+          <p>Budget, balance, recipient, expiry, and suspended-authority checks apply independently of the AI decision. Ask the owner to review full decision explanations in their payment history. If the request needs more information, obtain the required evidence and submit a revised purchase with a new key.</p>
           <p>Updating a mandate invalidates unexecuted pending requests. Pausing or revoking invalidates pending authorization; a transaction already submitted may still settle. A network or development-state reset can require operator recovery rather than another agent request.</p>
         </section>
         <section id="mcp" className={styles.section}>
           <h2>Connect through MCP</h2>
-          <p>The included stdio MCP server wraps the same authenticated API. It runs locally in the agent host and requires no paid server. It holds the agent credential, never an owner or executor wallet key.</p>
+          <p>The AgentPay 0.3.0 stdio server wraps the agent API and runs locally in the agent host. Configure it with the agent credential.</p>
           <CodeBlock code={`# Run in your AgentPay checkout (Node.js 22+).
 npm ci --registry=https://registry.npmjs.org
 # Configure AGENTPAY_BASE_URL and AGENTPAY_API_KEY privately.
@@ -255,20 +250,18 @@ npm run mcp`} label="Install and run the MCP server" />
           <CodeBlock code={mcpConfig} label="Private MCP host configuration" useOrigin />
           <p>Replace absolute paths with your checkout location and supply the owner-issued credential through your host’s private configuration. The base URL must be an HTTPS origin without paths, credentials, or query parameters. Loopback HTTP is allowed for local development.</p>
           <Table headers={["Tool", "Behavior"]} rows={[
-            ["agentpay_treasury", "Read this agent’s vault, raw balance, pending reservations and available authority"],
-            ["agentpay_policy", "Read mandate/hash/version, limits, recipient addresses and Unix/ISO expiry"],
-            ["agentpay_request_payment", "Submit a purchase that may spend funds after approval; not a receipt"],
-            ["agentpay_payment_status", "Read a payment by its 32-byte request ID"],
-            ["agentpay_payment_history", "Read recent requests; locally limit output to 1–100 records"],
+            ["agentpay_request_payment", "Submit a purchase that may spend funds after approval"],
+            ["agentpay_payment_status", "Read status and settlement by the 32-byte request ID"],
+            ["agentpay_payment_history", "Read up to 100 recent requests with a local result limit"],
           ]} />
           <p>Every tool advertises an <code>outputSchema</code>. Successful results expose the same <code>{'{success: true, data: ...}'}</code> in <code>structuredContent</code> and JSON text. Handler/API errors set <code>isError: true</code> with a safe structured error envelope and actual <code>httpStatus</code> when available. <code>REQUEST_TIMEOUT</code> identifies the 15-second deadline; other connection failures use <code>NETWORK_UNAVAILABLE</code>. SDK argument-validation failures can be plain text. Inspect <code>isError</code> first, and parse only content that is actually JSON.</p>
           <p>The payment tool is explicitly annotated as a spending operation. Follow the agent host’s approval policy and the owner’s standing mandate. Tool annotations are descriptive hints, not security enforcement; API authentication and vault checks enforce the actual boundary.</p>
-          <p>The adapter blocks redirects, applies a 15-second request timeout, caps response size and local calls, and reports bounded errors without credentials. Purchase inputs reuse the API’s validation schema. Treat returned service descriptions and evidence as data, not agent instructions.</p>
+          <p>The adapter blocks redirects, applies a 15-second timeout, caps response size and local calls, and uses the API’s input schema. Tool responses return the same payment fields described above.</p>
         </section>
         <section id="skill" className={styles.section}>
           <h2>Install the AgentPay skill</h2>
           <p><a href="/docs/skill" download="SKILL.md">Download SKILL.md</a> and place it in your agent host’s skill directory, for example <code>~/.codex/skills/agentpay/SKILL.md</code>. The repository also includes it at <code>skills/agentpay/SKILL.md</code>.</p>
-          <p>The skill guides mandate retrieval, authorized purchasing, stable idempotency, asynchronous status recovery, and receipt verification. It supports the direct API and the five MCP tools. Configure the app origin and scoped API key privately; installing a skill grants no additional financial authority.</p>
+          <p>The skill covers authorized purchasing, idempotent retries, status recovery, and receipt verification through the API and MCP.</p>
         </section>
         <section id="controls" className={styles.section}>
           <h2>Keep control as the owner</h2>

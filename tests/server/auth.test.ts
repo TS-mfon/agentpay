@@ -11,6 +11,18 @@ import { emptyState } from "../../src/core/types";
 const account = privateKeyToAccount(generatePrivateKey());
 afterEach(() => vi.unstubAllEnvs());
 describe("owner authentication", () => {
+  it("rejects a smart-account session from the shared preview store", async () => {
+    const store = new MemoryStore(emptyState());
+    const auth = new OwnerAuth(store);
+    const { nonce, message } = await auth.nonce(account.address, "https://agentpay.example");
+    const signature = await account.signMessage({ message });
+    const { token } = await auth.verify({ address: account.address, nonce, signature });
+    await store.update(state => ({
+      ...state,
+      sessions: state.sessions.map(session => ({ ...session, signer: account.address })),
+    }));
+    await expect(auth.owner(token)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
   it("uses one-time signed nonce, hashed session, and logout revocation", async () => {
     const store = new MemoryStore(emptyState());
     const auth = new OwnerAuth(store);

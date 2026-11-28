@@ -45,6 +45,7 @@ describe("paid research resource fulfillment", () => {
     const body = await response.json();
     expect(body.success).toBe(true);
     expect(body.data.paymentId).toBe(receipt.id);
+    expect(body.data.receipt).not.toHaveProperty("decisionReference");
     expect(body.data.dataset.kind).toBe("sample");
     expect(body.data.dataset.records.length).toBeGreaterThan(0);
     expect(

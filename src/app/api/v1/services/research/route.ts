@@ -27,7 +27,6 @@ export async function GET(request: Request) {
       receipt: {
         requestId: payment.id,
         transactionHash: payment.transactionHash ?? null,
-        decisionReference: payment.decisionRef ?? null,
         amount: payment.amount,
         recipient: payment.recipient,
         status: payment.status,

@@ -1,16 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentPayClient, AgentPayClientError } from "../../mcp/client";
+import { agentPaymentFixture, paymentFixture } from "./fixtures";
+const requestId = "0x" + "b".repeat(64);
 const key = "ap_" + "a".repeat(43);
 const recipient = "0x2222222222222222222222222222222222222222";
 const input = { recipient, amount: "4", service: "Research API", purpose: "Purchase relevant research", evidence: "Invoice 123", idempotencyKey: "research-job-001" };
-const fetchOk = () => vi.fn(async (_url: string | URL | Request, _options?: RequestInit) => new Response(JSON.stringify({success:true,data:{id:"0x"+"b".repeat(64),status:"queued"}}), {headers:{"content-type":"application/json"}}));
+const fetchOk = () => vi.fn(async (_url: string | URL | Request, _options?: RequestInit) => new Response(JSON.stringify({success:true,data:paymentFixture()}), {headers:{"content-type":"application/json"}}));
 
 describe("AgentPay MCP API client", () => {
   it("scopes bearer authentication to a fixed HTTPS origin and forbids redirects", async () => {
     const fetcher = fetchOk();
     const client = new AgentPayClient("https://agentpay.example/", key, {fetch: fetcher});
-    await client.treasury();
-    expect(fetcher).toHaveBeenCalledWith("https://agentpay.example/api/v1/treasury", expect.objectContaining({redirect:"error",headers:expect.objectContaining({Authorization:`Bearer ${key}`})}));
+    await client.payment(requestId);
+    expect(fetcher).toHaveBeenCalledWith("https://agentpay.example/api/v1/payments/" + requestId, expect.objectContaining({redirect:"error",headers:expect.objectContaining({Authorization:`Bearer ${key}`})}));
   });
   it.each(["https://user:pass@agentpay.example", "https://agentpay.example/?key=secret", "https://agentpay.example/path", "http://agentpay.example", "file:///etc/passwd"])("rejects unsafe base configuration %s", (url) => {
     expect(() => new AgentPayClient(url,key)).toThrow(AgentPayClientError);
@@ -39,21 +41,21 @@ describe("AgentPay MCP API client", () => {
   it("does not leak credentials or response details in errors", async () => {
     const fetcher=vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response(JSON.stringify({success:false,error:{code:"UNAUTHORIZED",message:key}}),{status:401}));
     const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
-    await expect(client.policy()).rejects.toThrow("Agent credential is invalid, expired, or revoked.");
+    await expect(client.payment(requestId)).rejects.toThrow("Agent credential is invalid, expired, or revoked.");
     const network=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async()=>{throw new Error(key);})});
-    await expect(network.policy()).rejects.toThrow("AgentPay could not be reached. Retrieve payment status before retrying a submission.");
+    await expect(network.payment(requestId)).rejects.toThrow("AgentPay could not be reached. Retrieve payment status before retrying a submission.");
   });
   it("limits history without adding unsupported pagination parameters", async () => {
-    const fetcher=vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response(JSON.stringify({success:true,data:[{id:"a"},{id:"b"}]})));
+    const fetcher=vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response(JSON.stringify({success:true,data:[paymentFixture(),paymentFixture("0x"+"d".repeat(64))]})));
     const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
-    expect(await client.history(1)).toEqual([{id:"a"}]);
+    expect(await client.history(1)).toEqual([agentPaymentFixture()]);
     expect(fetcher.mock.calls[0]?.[0]).toBe("https://agentpay.example/api/v1/payments");
   });
   it("rejects malformed and excessive upstream responses", async () => {
     const client=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response("not JSON"))});
-    await expect(client.treasury()).rejects.toThrow("AgentPay returned an invalid response.");
+    await expect(client.payment(requestId)).rejects.toThrow("AgentPay returned an invalid response.");
     const large=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async(_url: string | URL | Request, _options?: RequestInit)=>new Response("x".repeat(1_500_001)))});
-    await expect(large.treasury()).rejects.toThrow("AgentPay response exceeds the local size limit.");
+    await expect(large.payment(requestId)).rejects.toThrow("AgentPay response exceeds the local size limit.");
   });
   it("rejects invalid history limits and unexpected upstream history shapes", async () => {
     const fetcher=fetchOk(); const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetcher});
@@ -64,13 +66,13 @@ describe("AgentPay MCP API client", () => {
   it("rejects unexpected successful response envelopes", async () => {
     for(const payload of [null, {}, {success:false}, {success:true}]) {
       const client=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async()=>new Response(JSON.stringify(payload)))});
-      await expect(client.treasury()).rejects.toThrow("AgentPay returned an invalid response.");
+      await expect(client.payment(requestId)).rejects.toThrow("AgentPay returned an invalid response.");
     }
   });
   it("bounds upstream error codes and uses safe messages for errors", async () => {
     for(const status of [400,403,404,409,429,503]) {
       const client=new AgentPayClient("https://agentpay.example",key,{fetch:vi.fn(async()=>new Response(JSON.stringify({success:false,error:{code:key,message:key}}),{status}))});
-      try { await client.treasury(); throw new Error("Expected failure"); }
+      try { await client.payment(requestId); throw new Error("Expected failure"); }
       catch(error) { expect(error).toBeInstanceOf(AgentPayClientError); expect((error as AgentPayClientError).code).toBe("REQUEST_FAILED"); expect((error as Error).message).not.toContain(key); }
     }
   });
@@ -81,8 +83,8 @@ describe("AgentPay MCP API client", () => {
   });
   it("bounds local call frequency", async () => {
     const client=new AgentPayClient("https://agentpay.example",key,{fetch:fetchOk(),now:()=>1000});
-    for(let i=0;i<60;i++) await client.treasury();
-    await expect(client.treasury()).rejects.toThrow("Too many local tool calls. Wait a minute before retrying.");
+    for(let i=0;i<60;i++) await client.payment(requestId);
+    await expect(client.payment(requestId)).rejects.toThrow("Too many local tool calls. Wait a minute before retrying.");
   });
 });
 

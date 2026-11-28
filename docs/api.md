@@ -2,27 +2,24 @@
 
 ## Authentication and response rules
 
-Agents use an owner-issued `ap_` bearer credential bound to one active agent and vault. Only its digest is stored. Rotation invalidates the predecessor; revocation removes spending authority. The credential cannot administer an owner wallet, select another vault, fund, withdraw, or edit policy.
+Agents use an owner-issued `ap_` bearer credential bound to one active agent and vault. AgentPay stores the credential digest. Rotation invalidates the previous credential, and revocation removes spending authority.
 
-All REST responses use `{ "success": true, "data": ... }` or `{ "success": false, "error": { "code": "...", "message": "..." } }`. Amounts are decimal strings with up to six fractional places. Use exact integer/decimal arithmetic, never floating point. Successful payment submission currently returns HTTP 200 with a stored asynchronous request; it does not mean settlement.
+All REST responses use `{ "success": true, "data": ... }` or `{ "success": false, "error": { "code": "...", "message": "..." } }`. Amounts are decimal strings with up to six fractional places. Use exact decimal or integer arithmetic. HTTP 200 on submission confirms that AgentPay recorded the request for asynchronous processing.
 
 | Method | Path | Result |
 | --- | --- | --- |
-| GET | `/api/v1/treasury` | Credential-scoped treasury, balance, available funds and authority |
-| GET | `/api/v1/policy` | Current mandate, hash/version, limits, recipients and expiry |
 | POST | `/api/v1/payments` | Validated asynchronous request |
-| GET | `/api/v1/payments` | Bounded newest-first request, decision and settlement history |
-| GET | `/api/v1/payments/:id` | One credential-scoped request and its receipt references |
+| GET | `/api/v1/payments` | Bounded newest-first payment history |
+| GET | `/api/v1/payments/:id` | Credential-scoped payment status and settlement references |
+| GET | `/api/v1/services/research?paymentId=:id` | Sample dataset and receipt for a settled Research API payment |
 
-The API derives the vault and owner from the credential. Adding an owner or treasury query parameter does not widen access; unsupported purchase-body fields are rejected. A request ID is a 32-byte hexadecimal AgentPay reference, not a GenLayer or Aevum transaction hash.
+The API derives the vault and owner from the credential. Use the 32-byte hexadecimal AgentPay request ID returned by submission to query payment status.
 
-## Funds and authority
+## Owner access and migration
 
-`balance` is the raw on-chain token balance. `reservedBalance` is committed to eligible pending requests, including unresolved submitted Aevum transactions. `availableBalance` is raw balance minus commitments, clamped to zero. These are tUSD8 decimal strings, not deposits or budget allocations.
+The wallet-authenticated owner dashboard shows the full mandate, weekly budget, lifetime budget, per-payment limit, and available funds for the selected vault. Owner history includes full decision explanations. The public showcase displays testnet payment status and Aevum receipts.
 
-`availableWeeklyBudget` and `availableTotalBudget` account for settled spending and pending commitments. `spendableBalance` is the minimum of the available balance and remaining weekly/lifetime authority. `perPaymentLimit` remains an independent purchase cap. Existing requests or owner controls can change these figures after a read; admission and settlement independently recheck the actual restrictions.
-
-Older deployments may lack additive availability fields. The MCP leaves them absent rather than inferring that the entire raw balance is spendable. Policy `validUntil` uses Unix seconds. Payment `createdAt` and `expiresAt` use ISO UTC; MCP adds `authorizationExpiresAt` as an ISO rendering of validUntil.
+AgentPay retired `/api/v1/treasury` and `/api/v1/policy`, including their MCP equivalents. Ask the owner to confirm the approved recipient and amount before submitting a purchase. The wallet requirement controls disclosure within AgentPay. Aevum contract data and GenLayer transaction inputs and results remain public.
 
 ## Purchase input
 
@@ -60,19 +57,15 @@ The request binds treasury ID, agent ID, stable purchase key, exact normalized p
 
 Main lifecycle: `queued` → `awaiting_finality` → `approved` → `executing` → `settled`. A mandate that needs registration also passes through `evaluating`. The worker journals the signed GenLayer registration/evaluation envelope and hash before broadcast; losing the RPC response cannot erase that submitted identity. `rejected` and `needs_information` never authorize settlement. Failed and expired requests remain inspectable. Accepted GenLayer consensus is insufficient: the worker requires finalized successful consensus and matching request/mandate/version references.
 
-GitHub Actions normally checks every five minutes, with variable scheduling and finality latency. Requests expire within one hour or at mandate expiry, whichever is earlier. REST status/history may include the additive processing metadata below. These fields describe eligibility and recovery state; they do not provide a guaranteed next run, settlement ETA or worker-health heartbeat. Older records may omit them.
+GitHub Actions normally checks every five minutes, with variable scheduling and finality latency. Requests expire within one hour or at mandate expiry, whichever is earlier. `createdAt` and `expiresAt` use ISO UTC. Payment records may include these processing fields.
 
 | Optional field | Meaning |
 | --- | --- |
 | `retryAt` | Unix milliseconds when another processing attempt becomes eligible; the Actions schedule can run later |
 | `lastAttemptAt` | Unix milliseconds when the worker last claimed this request |
 | `consecutiveFailures` | Consecutive processing failures; ordinary pending-finality responses reset this counter |
-| `leaseUntil` | Unix milliseconds until the current processing ownership lease expires; clients must not treat it as permission to submit a duplicate |
-| `governanceUnresolved` | A signed or known GenLayer write still needs finality reconciliation; may remain true after financial expiry or a failed request |
 
-Escalate persistent lack of progress using the request ID, status, attempts, expiry, retry metadata and error. `attempts` counts claimed state-processing operations, not only failed RPC retries.
-
-The MCP adapter returns its advertised output schema. Hosts must not assume that every additive REST metadata field is also present in MCP results.
+Escalate a stalled request using its ID, status, attempt count, expiry, and any retry metadata. `attempts` counts each claimed processing operation.
 
 Signed GenLayer and Aevum bytes and their transaction hashes are saved before broadcast. Recovery reconciles the existing transaction and rebroadcasts only identical bytes when appropriate. GenLayer signing recovery currently uses Studio envelope references on governance chain `61997`; a saved registration must finalize successfully before evaluation continues. Credentials, raw execution/evaluation bytes, and raw registration journals are never returned to API clients. An unresolved submitted Aevum transaction may still settle after local expiry; its funds remain committed until reconciliation resolves it.
 
@@ -87,11 +80,11 @@ Poll every 15-30 seconds with backoff. A timeout can occur after acceptance. Ret
 | HTTP / code | Action |
 | --- | --- |
 | 400 / `INVALID_REQUEST` | Correct required fields, positive string amount, precision and key format |
-| 400 / `PAYMENT_LIMIT` | Read per-payment authority; do not split a purchase to evade it |
-| 400 / `INSUFFICIENT_BALANCE` | Check pending reservations and available funds; owner funding or completed requests may be needed |
-| 400 / `WEEKLY_BUDGET`, `TOTAL_BUDGET` | Read remaining authority; owner review is required to expand it |
+| 400 / `PAYMENT_LIMIT` | Ask the owner to review the purchase amount |
+| 400 / `INSUFFICIENT_BALANCE` | Ask the owner to review available funding and pending commitments |
+| 400 / `WEEKLY_BUDGET`, `TOTAL_BUDGET` | Ask the owner to review the budget |
 | 401 / `UNAUTHORIZED` | Obtain a current scoped credential; never reuse a revoked key |
-| 403 / `RECIPIENT_NOT_ALLOWED` | Read policy recipients and confirm the intended payee with the owner |
+| 403 / `RECIPIENT_NOT_ALLOWED` | Confirm an approved recipient with the owner |
 | 409 / `IDEMPOTENCY_CONFLICT` | Reconcile the original payload/key and request; do not guess with a new key |
 | 409 / `TREASURY_SELECTION_REQUIRED` | Owner APIs require the selected owned vault when several exist |
 | 429 | Back off with jitter and reduce calls |
@@ -99,22 +92,21 @@ Poll every 15-30 seconds with backoff. A timeout can occur after acceptance. Ret
 
 ## Receipt mapping
 
-History/status includes purchase fields, `treasuryId`, `agentId`, policy version, mandate hash, request hash, `amountUnits`, timestamps, state, attempts, decision/explanation and any transaction hash. Credentials and raw signed transaction bytes are excluded.
+Submission, history, and status share the same record. It returns `id`, `treasuryId`, `agentId`, `recipient`, `amount`, `amountUnits`, `idempotencyKey`, `policyVersion`, `createdAt`, `expiresAt`, `status`, and `attempts`, plus available processing fields. A live payment may include an Aevum `transactionHash`. A settled payment with that hash also includes `requestHash`. Simulated settlement returns the `settled` status without an on-chain receipt.
 
 | Payment record | Verification |
 | --- | --- |
-| `transactionHash` | Aevum transaction reference; a `settled` record requires a successful matching receipt on chain 44005 |
+| `transactionHash` | Successful matching receipt on Aevum chain 44005 for a live `settled` record |
 | `treasuryId` | Contract emitting the `PaymentExecuted` event and source vault |
 | `id` | Event `requestId` |
 | `agentId`, `policyVersion` | Matching event fields |
 | `recipient` | Vault-event recipient and official tUSD8 `Transfer.to` |
-| `amountUnits` | Exact vault-event amount and official tUSD8 `Transfer.value`; tUSD8 has six decimals |
-| `requestHash`, `decisionRef` | Matching event request hash and GenLayer evaluation reference |
-| `mandateHash`, `policyVersion`, `requestHash` | Matching finalized GenLayer decision and historical policy |
+| `amountUnits` | Exact vault-event amount and official tUSD8 `Transfer.value` using six decimals |
+| `requestHash` | Matching purchase binding in the vault event |
 
 Use `https://explorer-test.qday.info/tx/<transactionHash>` or trusted Aevum JSON-RPC at `https://rpc-test.qday.info`. tUSD8 is `0x456569838f1d43009A91ebA4263147Afd7233483`. Before marking `settled`, the backend requires one matching `PaymentExecuted` event from the expected vault and exactly one `Transfer` emitted by that official token from the vault to the recorded recipient for `amountUnits`. MCP returns the record and references; it does not independently fetch or cryptographically verify the Aevum receipt. State when verification is backend-reported. A transfer receipt does not prove merchant identity, service quality or delivery.
 
-The adapter's internal `verification_failed` result is represented publicly as `status: "failed"`, preserving `transactionHash` and an error requesting receipt review. It means a mined successful transaction lacked matching payment proof, not that it reverted or that no tokens moved. This known mined request is not automatically rebroadcast or re-signed. Verify its receipt and actual token transfers with the owner/operator before submitting another purchase with a new key. RPC uncertainty remains `executing` and continues reconciliation; a confirmed revert has its separate error explanation.
+A hash on an `executing` or `failed` record is a reference for reconciliation. A failed record can represent a mined transaction whose logs lacked matching payment proof. Verify its receipt and token transfers with the owner or operator before creating another purchase key. The owner can inspect detailed errors and the decision explanation in wallet-authenticated history.
 
 ## Owner pages and APIs
 
@@ -125,7 +117,8 @@ Owner wallet sign-in uses `/api/auth/nonce`, `/api/auth/verify` and `/api/auth/l
 | Method | Owner path | Scope |
 | --- | --- | --- |
 | GET | `/api/owner/agents` | Real agents owned by the authenticated wallet |
-| GET | `/api/owner/dashboard?treasuryId=:id` | Selected owned vault, mandate and history |
+| GET | `/api/owner/dashboard?treasuryId=:id` | Selected vault, full mandate, limits, and history |
+| GET | `/api/owner/payments?treasuryId=:id` | Selected vault's request history and full decision explanations |
 | POST | `/api/owner/setup` | Create/register a new distinct owned vault-backed agent |
 | POST | `/api/owner/payments?treasuryId=:id` | Request a payment for the selected agent |
 | POST | `/api/owner/policy?treasuryId=:id` | Register a confirmed new mandate version |
@@ -140,7 +133,7 @@ Omitting selection is compatible for zero/one vault; when several exist, select 
 
 Run the repository's `mcp/server.ts` through the installed tsx binary with private `AGENTPAY_BASE_URL` and `AGENTPAY_API_KEY`. The official SDK is `@modelcontextprotocol/server` 2.4.0. The maintained skill is [skills/agentpay/SKILL.md](../skills/agentpay/SKILL.md), also downloadable at `/docs/skill`.
 
-Tools remain `agentpay_treasury`, `agentpay_policy`, `agentpay_request_payment`, `agentpay_payment_status` and `agentpay_payment_history`. Every tool advertises an output schema. Successful calls provide `{success: true, data}` in both `structuredContent` and JSON text. Handler/API errors set `isError: true` and return a safe structured error envelope, with actual `httpStatus` when available; SDK argument-validation errors can be plain text. Inspect `isError` first, then parse only JSON content as JSON.
+MCP 0.3.0 exposes `agentpay_request_payment`, `agentpay_payment_status`, and `agentpay_payment_history`. Successful calls return the agent payment record in both `structuredContent` and JSON text. Handler and API failures set `isError: true` and include `httpStatus` when available. SDK argument-validation errors can be plain text. Check `isError` before parsing the result.
 
 Only the request tool can cause payment. A standing owner mandate may authorize purchases, subject to narrower host controls. Annotations describe side effects, while the API and vault enforce permissions. The adapter validates a fixed origin, refuses redirects, times out in 15 seconds, caps responses at 1.5MB and local calls at 60/minute, and never forwards upstream secrets in errors.
 

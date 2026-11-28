@@ -57,7 +57,7 @@ describe("public selected showcase", () => {
     expect(body.data.mode).toBe("live");
     expect(body.data.treasuryId).toBe(DEMO_TREASURY);
     expect(body.data.payments[0].transactionHash).toBe("0x" + "ef".repeat(32));
-    expect(dashboard).toHaveBeenCalledWith(DEMO_OWNER);
+    expect(dashboard).toHaveBeenCalledWith(DEMO_OWNER, DEMO_TREASURY);
     const encoded = JSON.stringify(body);
     for (const sensitive of [
       "PRIVATE_PURPOSE",
@@ -65,6 +65,13 @@ describe("public selected showcase", () => {
       "PRIVATE_SIGNED_TRANSACTION",
       "PRIVATE_KEY_REFERENCE",
       "PRIVATE_DIGEST",
+      "Research service matches the mandate.",
+      "mandate",
+      "weeklyBudget",
+      "totalBudget",
+      "perPaymentLimit",
+      "decisionReason",
+      "decisionRef",
       sessionMarker,
     ])
       expect(encoded).not.toContain(sensitive);
@@ -72,7 +79,7 @@ describe("public selected showcase", () => {
   it("ignores user-selected owner and vault parameters", async () => {
     const response = await GET(request("?owner=attacker&treasuryId=foreign"));
     expect((await response.json()).data.treasuryId).toBe(DEMO_TREASURY);
-    expect(dashboard).toHaveBeenCalledWith(DEMO_OWNER);
+    expect(dashboard).toHaveBeenCalledWith(DEMO_OWNER, DEMO_TREASURY);
   });
   it("returns not-found when disabled, invalid, absent, or running simulation", async () => {
     for (const value of [

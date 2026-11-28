@@ -47,11 +47,13 @@ test("distinct agent, payment, history and controls pages preserve governed work
  await page.getByRole("button",{name:"Rotate and reveal new key"}).click();
  const key=await page.getByLabel("Copy this key now").inputValue();
  expect(key).toMatch(/^ap_/);
- expect((await request.get("/api/v1/treasury",{headers:{authorization:`Bearer ${key}`}})).status()).toBe(200);
+ expect((await request.get("/api/v1/payments",{headers:{authorization:`Bearer ${key}`}})).status()).toBe(200);
+ for (const path of ["/api/v1/treasury", "/api/v1/policy"])
+   expect((await request.get(path, { headers: { authorization: `Bearer ${key}` } })).status()).toBe(404);
  await page.keyboard.press("Escape");
  await page.getByRole("button",{name:"Revoke agent",exact:true}).click();
  await page.getByRole("dialog").getByRole("button",{name:"Revoke agent",exact:true}).click();
- expect((await request.get("/api/v1/treasury",{headers:{authorization:`Bearer ${key}`}})).status()).toBe(401);
+ expect((await request.get("/api/v1/payments",{headers:{authorization:`Bearer ${key}`}})).status()).toBe(401);
  await expect(page.getByRole("button",{name:"Authorize agent again"})).toBeVisible();
  await page.getByRole("button",{name:"Authorize agent again"}).click();
  await expect(page.getByRole("button",{name:"Revoke agent",exact:true})).toBeVisible();

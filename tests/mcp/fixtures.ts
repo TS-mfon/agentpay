@@ -1,5 +1,12 @@
 export const fixtureAddress = "0x" + "2".repeat(40);
 export const fixtureHash = "0x" + "c".repeat(64);
-export const treasuryFixture = { id: fixtureAddress, owner: fixtureAddress, executor: fixtureAddress, token: fixtureAddress, agentId: fixtureHash, agentName: "Household agent", balance: "0.05", reservedBalance: "0.01", availableBalance: "0.04", weeklySpent: "0", totalSpent: "0", active: true, paused: false, policyVersion: 1, keyVersion: 2 };
-export const policyFixture = { treasuryId: fixtureAddress, agentId: fixtureHash, version: 1, mandate: "Pay only household bills", mandateHash: fixtureHash, perPaymentLimit: "10", weeklyBudget: "40", totalBudget: "200", validUntil: 1798058297, recipients: [fixtureAddress] };
-export const paymentFixture = (id = "0x" + "b".repeat(64)) => ({ id, treasuryId: fixtureAddress, agentId: fixtureHash, recipient: fixtureAddress, amount: "0.001", amountUnits: "1000", service: "Water bill", purpose: "Pay household water bill", evidence: "Owner-requested test", idempotencyKey: "water-test-001", policyVersion: 1, mandateHash: fixtureHash, requestHash: fixtureHash, status: "queued", attempts: 0, createdAt: "2026-11-23T20:00:00.000Z", expiresAt: "2026-11-23T21:00:00.000Z" });
+export const agentPaymentFixture = (id = "0x" + "b".repeat(64)) => ({
+  id, treasuryId: fixtureAddress, agentId: fixtureHash, recipient: fixtureAddress,
+  amount: "0.001", amountUnits: "1000", idempotencyKey: "water-test-001",
+  policyVersion: 1, status: "queued", attempts: 0,
+  createdAt: "2026-11-23T20:00:00.000Z", expiresAt: "2026-11-23T21:00:00.000Z",
+});
+export const paymentFixture = (id?: string) => ({
+  ...agentPaymentFixture(id), service: "Water bill", purpose: "Pay household water bill",
+  evidence: "Owner-requested test", mandateHash: fixtureHash, requestHash: fixtureHash,
+});

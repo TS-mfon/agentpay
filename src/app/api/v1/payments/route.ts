@@ -1,14 +1,16 @@
 import { handle, agent, body } from "../../../../server/http";
+import { agentPayment } from "../../../../core/agent-payment";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   return handle(request, async (r) => {
     const identity = await agent(request, r);
-    return (await r.service.dashboard(identity.owner, identity.treasuryId)).payments;
+    return (await r.service.listPayments(identity.owner, identity.treasuryId)).map(agentPayment);
   });
 }
 export async function POST(request: Request) {
   return handle(request, async (r) => {
     const identity = await agent(request, r);
-    return r.service.requestPayment(identity.owner, await body(request), identity.treasuryId, identity);
+    const payment = await r.service.requestPayment(identity.owner, await body(request), identity.treasuryId, identity);
+    return agentPayment(payment);
   });
 }

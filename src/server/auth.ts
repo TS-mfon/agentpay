@@ -93,7 +93,7 @@ export class OwnerAuth {
     const session = (await this.store.read()).sessions.find(
       (s) => s.digest === digest(token) && s.expiresAt > this.now(),
     );
-    if (!session)
+    if (!session || ("signer" in session && session.signer))
       throw new AppError(
         "UNAUTHORIZED",
         "Your owner session expired. Sign in again.",
