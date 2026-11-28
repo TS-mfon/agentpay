@@ -11,6 +11,8 @@ export type PaymentStatus =
   | "expired"
   | "failed";
 export type Mode = "demo" | "live";
+export type PaymentVerdict = "approved" | "rejected" | "needs_information";
+export type PaymentFailureStage = "validation" | "governance" | "settlement";
 export interface Policy {
   treasuryId: string;
   agentId: string;
@@ -79,6 +81,11 @@ export interface Payment extends PaymentInput {
   transactionHash?: string;
   rawTransaction?: string;
   error?: string;
+  scan?: {
+    verdict?: PaymentVerdict;
+    failureStage?: PaymentFailureStage;
+    verifiedSettlementHash?: string;
+  };
 }
 export interface Credential {
   digest: string;

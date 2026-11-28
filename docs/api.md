@@ -21,6 +21,21 @@ The wallet-authenticated owner dashboard shows the full mandate, weekly budget, 
 
 AgentPay retired `/api/v1/treasury` and `/api/v1/policy`, including their MCP equivalents. Ask the owner to confirm the approved recipient and amount before submitting a purchase. The wallet requirement controls disclosure within AgentPay. Aevum contract data and GenLayer transaction inputs and results remain public.
 
+## Public Scan
+
+Use `/scan` to browse payment requests or open `/scan/<request-id>` to track a specific request. Scan shows the agent name, exact tUSD8 amount, state, submission time and request ID without wallet sign-in.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/api/scan/payments` | Newest-first summaries and a `nextCursor` for older records |
+| GET | `/api/scan/payments/:id` | Request progress, a verdict when recorded, and a verified Aevum transaction hash when available |
+
+The list accepts `status`, an opaque `cursor`, and `limit` from 1 to 24. The default limit is 12. The `pending` filter includes queued, evaluating and awaiting-finality requests. The `approved` filter includes requests awaiting or undergoing Aevum settlement. Other filters are `needs_information`, `rejected`, `settled`, `expired` and `failed`. The browser refreshes loaded active requests using `ids`, a separate comma-separated list of up to 24 full IDs.
+
+Newly recorded GenLayer verdicts have fixed public explanations. Older records show the recorded verdict when available. Mandates, evidence, budgets and full reasoning remain in wallet-authenticated AgentPay routes. Public-chain visibility still applies.
+
+Set `AGENTPAY_SCAN_FEED=false` to disable listing and batch refresh. Public lookups by known request IDs remain available. Keep a wallet-authenticated owner route for access restricted to the treasury owner.
+
 ## Purchase input
 
 Send `Authorization: Bearer <private environment credential>` and `Content-Type: application/json`. The body is bounded to 16KB and accepts only these fields:

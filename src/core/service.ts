@@ -47,7 +47,7 @@ const policyFor = (s: State, t: Treasury) =>
     (p) => sameAddress(p.treasuryId, t.id) && p.version === t.policyVersion,
   );
 const safePayment = ({ rawTransaction: _raw, rawGovernanceTransaction: _governanceRaw,
-  policyRegistration: _registration, ...payment }: Payment) =>
+  policyRegistration: _registration, scan: _scan, ...payment }: Payment) =>
   payment as Payment;
 const paymentsFor = (state: State, treasuryId: string) => state.payments
   .filter(payment => sameAddress(payment.treasuryId, treasuryId))

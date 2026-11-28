@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { AtomicStore, Ports, SignedGovernanceTransaction, PolicyDecision } from "./ports";
-import type { Payment, Treasury, Policy, State, Mode } from "./types";
+import type { Payment, PaymentFailureStage, Treasury, Policy, State, Mode } from "./types";
 import { AppError } from "./errors";
 import { units, decimal, sameAddress } from "./validation";
 import { checkLimits } from "./financial";
@@ -78,18 +78,26 @@ export class PaymentProcessor {
     }));
   }
   private async process(payment: Payment, workerToken: string) {
+    let stage: PaymentFailureStage = payment.status === "executing" ? "settlement" : "validation";
     try {
-      if (isTerminal(payment) && governancePending(payment)) return await this.drainGovernance(payment, workerToken);
+      if (isTerminal(payment) && governancePending(payment)) {
+        stage = "governance";
+        return await this.drainGovernance(payment, workerToken);
+      }
       const context = await this.validate(payment);
       if (!context) return;
-      if (payment.status === "queued" || payment.status === "evaluating")
+      if (payment.status === "queued" || payment.status === "evaluating" || payment.status === "awaiting_finality") {
+        stage = "governance";
+        if (payment.status === "awaiting_finality")
+          return await this.inspectDecision(payment, workerToken, context.t.owner);
         return await this.evaluate(payment, context.policy, context.t, workerToken);
-      if (payment.status === "awaiting_finality")
-        return await this.inspectDecision(payment, workerToken, context.t.owner);
-      if (payment.status === "approved")
+      }
+      if (payment.status === "approved") {
+        stage = "settlement";
         await this.executeApproved(payment, context.t, workerToken);
+      }
     } catch (error) {
-      await this.recordFailure(payment, error, workerToken);
+      await this.recordFailure(payment, error, workerToken, stage);
     }
   }
   private async drainGovernance(payment: Payment, token: string) {
@@ -250,8 +258,10 @@ export class PaymentProcessor {
     }
   }
   private async recordFinalizedDecision(payment: Payment, decision: PolicyDecision, token: string, expectedOwner: string) {
+    const verdict = decision.status;
+    if (verdict === "pending") return false;
     if (
-      decision.status !== "unavailable" && (
+      verdict !== "unavailable" && (
       decision.requestHash !== payment.requestHash ||
       decision.mandateHash !== payment.mandateHash)
     )
@@ -271,10 +281,12 @@ export class PaymentProcessor {
       const finalized = { ...current, governanceUnresolved: false, rawGovernanceTransaction: undefined,
         leaseUntil: undefined, retryAt: undefined, consecutiveFailures: 0 };
       if (!authorized) return isTerminal(current) ? finalized : { ...finalized,
-        status: expired ? "expired" : "failed", error: "Spending authority changed before the finalized decision was recorded." };
-      recoverable = decision.status === "unavailable";
-      if (recoverable) return finalized;
-      return { ...finalized, status: decision.status as "approved" | "rejected" | "needs_information",
+        status: expired ? "expired" : "failed",
+        ...(expired ? {} : { scan: { ...finalized.scan, failureStage: "governance" as const } }),
+        error: "Spending authority changed before the finalized decision was recorded." };
+      recoverable = verdict === "unavailable";
+      if (verdict === "unavailable") return finalized;
+      return { ...finalized, status: verdict, scan: { ...finalized.scan, verdict },
         decisionReason: decision.reason, approvalExpiresAt: Math.floor(Date.parse(current.expiresAt) / 1000), error: undefined };
     });
     return recoverable;
@@ -430,7 +442,7 @@ export class PaymentProcessor {
       t,
     );
   }
-  private async recordFailure(payment: Payment, error: unknown, token: string) {
+  private async recordFailure(payment: Payment, error: unknown, token: string, stage: PaymentFailureStage) {
     const state = await this.store.read();
     if (state.workerLease?.token !== token || state.workerLease.expiresAt <= this.now()) return;
     const current = state.payments.find((p) => p.id === payment.id);
@@ -455,9 +467,10 @@ export class PaymentProcessor {
     const terminal = error instanceof AppError && (error.status < 500 || finalizedError);
     const exhausted = failures >= MAX_TRANSIENT_FAILURES;
     const unresolved = !finalizedError && governancePending(current);
-    const retainTerminal = isTerminal(current);
+    const failed = !isTerminal(current) && (terminal || exhausted);
     await this.updateOwned(current, token, p => ({ ...p,
-      status: retainTerminal ? current.status : terminal || exhausted ? "failed" : current.status,
+      status: failed ? "failed" : current.status,
+      ...(failed ? { scan: { ...p.scan, failureStage: stage } } : {}),
       error: exhausted && !terminal ? "RPC retry budget exhausted. No funds were settled; inspect configuration before retrying this request." : message,
       consecutiveFailures: failures,
       leaseUntil: undefined,
@@ -472,6 +485,7 @@ export class PaymentProcessor {
     if (outcome.status === "verification_failed") {
       await this.patch(payment.id, {
         status: "failed",
+        scan: { ...payment.scan, failureStage: "settlement" },
         transactionHash: outcome.transactionHash ?? payment.transactionHash,
         error: "Successful transaction did not prove the requested payment; review its receipt before resubmitting.",
         leaseUntil: undefined,
@@ -519,6 +533,9 @@ export class PaymentProcessor {
                   retryAt: undefined,
                   consecutiveFailures: 0,
                   transactionHash: outcome.transactionHash ?? p.transactionHash,
+                  ...(this.mode === "live" && outcome.transactionHash ? {
+                    scan: { ...p.scan, verifiedSettlementHash: outcome.transactionHash },
+                  } : {}),
                 }
               : p,
           ),
@@ -529,6 +546,7 @@ export class PaymentProcessor {
     if (outcome.status === "failed") {
       await this.patch(payment.id, {
         status: "failed",
+        scan: { ...payment.scan, failureStage: "settlement" },
         error: "Aevum transaction reverted. No payment was settled.",
         leaseUntil: undefined,
         retryAt: undefined,

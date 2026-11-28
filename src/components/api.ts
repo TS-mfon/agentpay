@@ -7,10 +7,15 @@ export class ApiError extends Error {
     super(message);
   }
 }
-export async function api<T>(path: string, body?: unknown): Promise<T> {
+export async function api<T>(
+  path: string,
+  body?: unknown,
+  options?: Pick<RequestInit, "credentials" | "signal">,
+): Promise<T> {
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
-    credentials: "same-origin",
+    credentials: options?.credentials ?? "same-origin",
+    signal: options?.signal,
     cache: "no-store",
     headers:
       body === undefined ? undefined : { "Content-Type": "application/json" },
