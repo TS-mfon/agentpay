@@ -16,7 +16,7 @@ export default function Landing() {
     <a className="skip-link" href="/workspace">Skip story and open workspace</a>
     <nav className="ap-nav" aria-label="Main navigation">
       <a className="ap-brand" href="/" aria-label="AgentPay home"><BrandMark/><span>AgentPay</span></a>
-      <div className="ap-nav-links"><a href="#how-it-works">How it works</a><a href="#your-control">Your control</a><a href="/docs">Documentation</a></div>
+      <div className="ap-nav-links"><a href="#how-it-works">How it works</a><a href="#your-control">Your control</a><a href="/scan">Scan</a><a href="/docs">Documentation</a></div>
       <a href="/agents" className="ap-button">Open workspace <Arrow/></a>
     </nav>
     <main>
@@ -66,7 +66,7 @@ export default function Landing() {
         <div className="ap-start-note"><p>Real tUSD8 settlement on Aevum. GenLayer policy evaluation.<br/>A working testnet dapp with owner-controlled funds.</p><a href="/docs#architecture">Understand the controls and trust model <Arrow/></a></div>
       </section>
     </main>
-    <footer className="ap-footer"><a href="/" className="ap-brand"><BrandMark/>AgentPay</a><div><a href="/docs">Docs</a><a href="/docs#mcp">Agent skill & MCP</a><a href="https://explorer-test.qday.info/" target="_blank" rel="noreferrer">Aevum explorer</a></div><p>Financial authority for autonomous agents.</p></footer>
+    <footer className="ap-footer"><a href="/" className="ap-brand"><BrandMark/>AgentPay</a><div><a href="/scan">Scan</a><a href="/docs">Docs</a><a href="/docs#mcp">Agent skill & MCP</a><a href="https://explorer-test.qday.info/" target="_blank" rel="noreferrer">Aevum explorer</a></div><p>Financial authority for autonomous agents.</p></footer>
     <button className="ap-motion-toggle" type="button" onClick={()=>setPaused(p=>!p)} aria-pressed={paused} aria-label={paused ? "Enable story motion" : "Pause story motion"}>{paused ? "Enable motion" : "Pause motion"}</button>
   </div>;
 }
