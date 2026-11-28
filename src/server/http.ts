@@ -76,7 +76,7 @@ export async function ownerIdentity(request: Request, runtime: Runtime, mutating
     .map((s) => s.trim())
     .find((s) => s.startsWith("agentpay_session="))
     ?.slice("agentpay_session=".length);
-  return runtime.auth.identity(token, mutating);
+  return runtime.auth.identity(token);
 }
 
 export async function directWalletOwner(request: Request, runtime: Runtime) {

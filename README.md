@@ -114,7 +114,7 @@ When a live preview enables `AGENTPAY_SMART_ACCOUNTS=true`, **Create smart accou
 
 The owner selects an agent before using the payment console or history. The console uses its approved recipients; a catalog entry is not permission to pay an otherwise unapproved address. Owners can fund or withdraw, update mandates, rotate credentials, pause a vault, or revoke an agent from its own page.
 
-Agents retrieve their own treasury and policy, submit purpose/evidence with a stable purchase key, and follow the request until a terminal status. A successful submission means the request was recorded. It does not mean a payment was approved or settled.
+Agents confirm the approved recipient and amount with the owner, submit the purchase with a stable key, and follow its status through settlement. Wallet-authenticated owners see the full mandate, limits, and decision explanations in their workspace.
 
 ## Protocol architecture
 
@@ -233,8 +233,6 @@ sequenceDiagram
     participant G as GenLayer mandate contract
     participant Q as Aevum treasury
     participant R as Recipient
-    A->>API: Retrieve treasury and current policy
-    API-->>A: Authority, recipients, limits, available funds
     A->>API: POST payment with stable idempotency key
     API->>DB: Atomically validate, reserve, and record request
     API-->>A: Request ID and queued status
@@ -260,7 +258,7 @@ sequenceDiagram
         W->>DB: Store terminal decision and explanation
     end
     A->>API: Poll request ID
-    API-->>A: Decision, status, and settlement references
+    API-->>A: Payment status and Aevum settlement references
 ```
 ```mermaid
 stateDiagram-v2
@@ -342,9 +340,9 @@ Only these fields are accepted. A client cannot set `approved`, `status`, `owner
 
 The implementation derives the agent ID from `agentpay:<lowercase vault address>:<agent name>`. It derives the request ID from the vault, agent, and purchase key. The request fingerprint hashes normalized purchase data plus treasury identity, agent identity, policy version, and mandate hash. The mandate hash is Keccak-256 of the mandate text.
 
-An identical request under the same key returns its existing request ID. Different contents or policy binding under that key produce `IDEMPOTENCY_CONFLICT`. Admission and the ledger update use atomic compare-and-swap persistence, so concurrent retries cannot reserve several purchases for one key. This is an implementation-specific normalized serialization; clients should retain the returned hashes rather than invent an independent JSON-canonicalization algorithm.
+An identical request under the same key returns its existing request ID. Changing the contents or applicable policy under that key produces `IDEMPOTENCY_CONFLICT`. Admission and the ledger update use atomic compare-and-swap persistence so concurrent retries reserve funds once. Clients should keep the exact payload, key, and returned request ID.
 
-| Quantity | Meaning |
+| Owner dashboard field | Meaning |
 | --- | --- |
 | `balance` | Actual tUSD8 held by the vault |
 | `reservedBalance` | Funds reserved by admitted pending requests |
@@ -373,9 +371,9 @@ A payment is complete only when its successful Aevum receipt contains one matchi
 | `decisionRef` | Event decision reference |
 | `transactionHash` | Successful Aevum transaction receipt |
 
-The event also records the authorization epoch. History preserves original purpose/evidence, policy references, decision reasoning, timestamps, and execution status. Authorized API responses exclude raw signed transaction bytes and credentials.
+The event also records the authorization epoch. Wallet-authenticated owner history preserves original purpose and evidence, policy references, and full decision explanations. Agent history provides status and Aevum transaction references. Live settled agent records include the purchase binding `requestHash`. Simulated settlement omits an on-chain receipt.
 
-A mined successful transaction whose logs do not prove the requested payment becomes `failed` with its transaction hash and a manual-receipt-review error. This is a verification failure, not a reported revert: tokens may have moved. The worker stops automatic broadcast/re-signing for that mined request and releases the nonce gate. Inspect its actual receipt and token transfers with the owner/operator before creating another purchase key. Unresolved RPC failures remain reconcilable `executing` transactions.
+A mined transaction whose logs lack matching payment proof becomes `failed`. Its hash remains available for reconciliation, and its full error appears in owner history. Funds can move even when verification fails. Inspect the actual receipt and token transfers with the owner or operator before creating another purchase key. Unresolved transactions stay `executing` during reconciliation.
 
 A receipt proves an on-chain payment under the recorded vault restrictions. It does not prove that a merchant's claims were truthful or a service was delivered. Service providers should independently verify the vault, recipient, amount, network, and receipt before granting access.
 
@@ -393,7 +391,6 @@ flowchart LR
     Skill -->|tool guidance| MCPC
     MCPC -->|stdio| MCPS[AgentPay MCP server]
     MCPS -->|HTTPS bearer auth| API
-    API --> T[Credential-bound treasury and mandate]
     API --> P[Asynchronous request and receipt ledger]
     P --> Merchant[Service provider receipt verification]
 ```
@@ -401,11 +398,9 @@ The `ap_` credential is generated by the owner for one agent treasury. Keep it i
 
 | Method | Endpoint | Result |
 | --- | --- | --- |
-| GET | `/api/v1/treasury` | Authorized treasury, activity, balances and spending |
-| GET | `/api/v1/policy` | Current mandate, version, caps, recipients and expiry |
 | POST | `/api/v1/payments` | Admit a validated asynchronous payment request |
 | GET | `/api/v1/payments` | Credential-scoped request history |
-| GET | `/api/v1/payments/:id` | Status, decision explanation and settlement references |
+| GET | `/api/v1/payments/:id` | Payment status and Aevum settlement references |
 | GET | `/api/v1/services/research?paymentId=:id` | Example resource gated by a settled Research API payment |
 
 The research resource is an original small sample demonstrating payment-gated delivery. It is not a commercial data service, a general discovery marketplace, or proof of an unrelated utility bill being fulfilled.
@@ -420,16 +415,7 @@ Responses use one envelope:
   "error": { "code": "RECIPIENT_NOT_ALLOWED", "message": "This recipient is not approved." }
 }
 ```
-Read permissions before constructing a purchase:
-```bash
-# Set AGENTPAY_BASE_URL and AGENTPAY_API_KEY privately first.
-curl --fail-with-body "$AGENTPAY_BASE_URL/api/v1/policy" \
-  --header "Authorization: Bearer $AGENTPAY_API_KEY"
-
-curl --fail-with-body "$AGENTPAY_BASE_URL/api/v1/treasury" \
-  --header "Authorization: Bearer $AGENTPAY_API_KEY"
-```
-A payment body has this shape. Replace the illustrative address, amount, purpose, evidence, and key with the actual authorized purchase:
+Confirm the approved recipient and amount with the owner. Set `AGENTPAY_BASE_URL` and `AGENTPAY_API_KEY` privately. The following payment body uses illustrative values. Replace the address, amount, purpose, evidence, and key with the authorized purchase.
 ```json
 {
   "recipient": "0x2222222222222222222222222222222222222222",
@@ -446,17 +432,17 @@ curl --fail-with-body --request POST "$AGENTPAY_BASE_URL/api/v1/payments" \
   --header "Authorization: Bearer $AGENTPAY_API_KEY" \
   --header "Content-Type: application/json" --data-binary @purchase.json
 ```
-Send `Authorization: Bearer <credential>` and `Content-Type: application/json`. Preserve the exact payload/key before submission and save the returned request ID. Poll that ID every 15-30 seconds with backoff. `validUntil` is Unix seconds; request timestamps are ISO UTC strings. The [web guide](https://agentpay-roan.vercel.app/docs) contains executable integration examples.
+Preserve the exact payload and key before submission and save the returned request ID. Poll that ID every 15–30 seconds with backoff. Request timestamps use ISO UTC. [Web guide and integration examples](https://agentpay-roan.vercel.app/docs)
 
 ### Owner API selection
 
-Owner endpoints use the wallet session cookie rather than the agent key. `GET /api/owner/agents` lists the session owner's agents. Dashboard, payment, policy, controls, and credential routes accept `?treasuryId=<owned vault address>` for selection. Bodies do not override ownership. Missing selection is allowed with zero/one treasury; several treasuries require an explicit selection.
+Owner endpoints require a wallet session cookie. `GET /api/owner/agents` lists the session owner's agents. Select an owned vault with `?treasuryId=<owned vault address>` on dashboard, payment, policy, controls, and credential routes. Wallets with several vaults must select one. The owner dashboard returns the full mandate, weekly budget, lifetime budget, and per-payment limit. The owner payment history returns full decision explanations.
 
-Wallet sign-in uses `/api/auth/nonce`, `/api/auth/verify`, and `/api/auth/logout`. Mutating owner routes require the trusted app origin. Agent integrations should use the v1 endpoints instead of trying to reuse owner cookies.
+Wallet sign-in uses `/api/auth/nonce`, `/api/auth/verify`, and `/api/auth/logout`. Mutating owner routes require the trusted app origin. The public showcase displays testnet status and receipt links. On-chain data remains publicly accessible.
 
 ### MCP setup
 
-The repository ships the AgentPay `0.2.0` stdio MCP adapter using the official MCP TypeScript server SDK. It runs in the agent host; it does not need a dedicated web server.
+The AgentPay `0.3.0` stdio adapter runs in the agent host and uses the official MCP TypeScript server SDK.
 ```bash
 npm ci --registry=https://registry.npmjs.org
 # Configure AGENTPAY_BASE_URL and AGENTPAY_API_KEY privately in the host.
@@ -478,13 +464,11 @@ A host can start it with the following configuration, replacing the path and obt
 
 | Tool | Operation |
 | --- | --- |
-| `agentpay_treasury` | Retrieve the credential's treasury and available authority |
-| `agentpay_policy` | Retrieve mandate, limits, approved recipients, expiry and version |
 | `agentpay_request_payment` | Submit a governed purchase; this can spend funded testnet assets |
-| `agentpay_payment_status` | Inspect a request using its AgentPay request ID, not a transaction hash |
+| `agentpay_payment_status` | Inspect payment status and settlement by AgentPay request ID |
 | `agentpay_payment_history` | Retrieve recent requests; its 1-100 output limit is local |
 
-The MCP adapter publishes output schemas and returns `{success:true,data}` as structured content plus identical JSON text. Handler/API errors carry `isError` with `{success:false,error:{code,message}}`; SDK input validation can return a plain-text tool error, so hosts check `isError` first. `validUntil` remains Unix seconds; the adapter also supplies `authorizationExpiresAt` as ISO UTC. Older APIs may omit availability fields; treat them as unknown instead of substituting raw balance.
+The adapter returns the agent payment record in both structured content and JSON text. Handler and API errors set `isError` and return `{success:false,error:{code,message}}`. Check `isError` before parsing tool output. AgentPay 0.3.0 retires the agent policy and treasury tools.
 
 The adapter validates its app origin, refuses redirects, limits response size and local call rate, and applies a 15-second request timeout. HTTPS is required for remote origins; loopback HTTP is supported for local development. Owner administration is not exposed as MCP tools. Tool annotations describe effects; authentication and contract restrictions enforce authority. A status record reports backend receipt verification; MCP does not independently query Aevum. Use a trusted RPC or explorer for independent verification.
 
@@ -497,15 +481,15 @@ The [agent skill](skills/agentpay/SKILL.md) teaches purchase selection, stable i
 | `UNAUTHORIZED` / HTTP 401 | Obtain a current owner-issued credential; do not assume a new purchase failed |
 | `INVALID_REQUEST` | Correct the supported fields, address, positive decimal amount, or purchase-key format |
 | `RECIPIENT_NOT_ALLOWED` | Select an owner-approved recipient or ask the owner to configure the real provider |
-| `PAYMENT_LIMIT`, `WEEKLY_BUDGET`, `TOTAL_BUDGET` | Reduce the authorized purchase or ask the owner to change limits |
-| `INSUFFICIENT_BALANCE` | Check available funds and pending reservations; ask the owner to fund the vault |
+| `PAYMENT_LIMIT`, `WEEKLY_BUDGET`, `TOTAL_BUDGET` | Ask the owner to review the authorized purchase and limits |
+| `INSUFFICIENT_BALANCE` | Ask the owner to review available funds and pending reservations |
 | `IDEMPOTENCY_CONFLICT` | Retrieve the original request; do not change a purchase under an existing key |
 | `TREASURY_SELECTION_REQUIRED` | Select an owned treasury on the owner surface |
-| `needs_information` | Obtain the missing evidence; a revised purchase needs a new key after reconciling the original |
-| `rejected` | Report the reasoning; do not bypass the mandate |
+| `needs_information` | Ask the owner to review the explanation and obtain missing evidence before submitting a revised purchase with a new key |
+| `rejected` | Report the status and direct the owner to the full explanation in wallet-authenticated history |
 | Timeout / transport failure | Retrieve the original request or history before resubmission |
 | HTTP 429 / 503 | Back off and retry reads; retain the original payload/key |
-| `failed` / `expired` | Inspect the explanation and transaction reference; a `failed` record with a hash requires receipt review before another purchase key |
+| `failed` / `expired` | Ask the owner to review the record and reconcile any transaction hash before creating another purchase key |
 
 Hosts must handle tool errors before reading a record. See [API reference](docs/api.md) and [MCP guide](mcp/README.md) for maintained field/output contracts and independent receipt checks.
 

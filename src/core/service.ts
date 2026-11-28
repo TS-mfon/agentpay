@@ -51,6 +51,10 @@ const policyFor = (s: State, t: Treasury) =>
 const safePayment = ({ rawTransaction: _raw, rawGovernanceTransaction: _governanceRaw,
   policyRegistration: _registration, ...payment }: Payment) =>
   payment as Payment;
+const paymentsFor = (state: State, treasuryId: string) => state.payments
+  .filter(payment => sameAddress(payment.treasuryId, treasuryId))
+  .map(safePayment)
+  .reverse();
 const canConfirmOwnerOperation = (state: State, owner: string, confirmation?: OwnerOperationConfirmation) =>
   !confirmation || ownerOperationPending(state, owner, confirmation.hash);
 const confirmOwnerOperation = (state: State, owner: string, confirmation?: OwnerOperationConfirmation) =>
@@ -123,12 +127,7 @@ export class AgentPayService {
       owner,
       treasury,
       policy: treasury ? (policyFor(s, treasury) ?? null) : null,
-      payments: treasury
-        ? s.payments
-            .filter((p) => sameAddress(p.treasuryId, treasury.id))
-            .map(safePayment)
-            .reverse()
-        : [],
+      payments: treasury ? paymentsFor(s, treasury.id) : [],
       services: this.ports.services ?? [],
     };
   }
@@ -169,6 +168,10 @@ export class AgentPayService {
         404,
       );
     return safePayment(p);
+  }
+  async listPayments(owner: string, treasuryId: string) {
+    const state = await this.store.read();
+    return paymentsFor(state, this.treasury(state, owner, treasuryId).id);
   }
   async checkOwnerOperation(owner: string, intent: OwnerIntent) {
     const state = await this.store.read();

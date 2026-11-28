@@ -70,7 +70,7 @@
 }
 .proof-account {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 25px 0;
   border-block: 1px solid #dbe5f2;
   gap: 20px;
@@ -84,42 +84,9 @@
 .proof-account strong {
   font-size: 18px;
 }
-.proof-mandate {
-  margin: 32px 0;
-  padding: 26px;
-  background: white;
-  border: 1px solid #dbe5f2;
-  border-radius: 14px;
-}
-.proof-section-title {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
-}
-.proof-section-title h2,
 .proof-payments h2,
 .proof-trust h2 {
   font-size: 21px;
-}
-.proof-section-title span {
-  font-size: 12px;
-  background: #eff4fb;
-  padding: 7px 10px;
-  border-radius: 5px;
-}
-.proof-mandate blockquote {
-  margin: 22px 0;
-  border-left: 3px solid #6c99d3;
-  padding-left: 18px;
-  line-height: 1.9;
-  color: #34526f;
-}
-.proof-mandate summary {
-  cursor: pointer;
-  color: #1d56a5;
-  font-size: 13px;
-  padding: 10px 0;
 }
 .proof-shell dl {
   display: grid;
@@ -186,14 +153,6 @@
   background: #fceeee;
   color: #a0383d;
 }
-.proof-reason {
-  margin-top: 22px;
-  background: #f7faff;
-  padding: 16px;
-  border-radius: 8px;
-  line-height: 1.8;
-  color: #3c5875;
-}
 .proof-trust {
   padding: 26px;
   margin-top: 32px;
@@ -246,7 +205,6 @@
   .proof-account strong {
     font-size: 15px;
   }
-  .proof-mandate,
   .proof-payment {
     padding: 20px;
   }

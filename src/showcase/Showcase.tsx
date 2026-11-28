@@ -10,27 +10,14 @@ type Proof = {
   balance: string;
   paused: boolean;
   active: boolean;
-  policy: {
-    version: number;
-    mandate: string;
-    mandateHash: string;
-    perPaymentLimit: string;
-    weeklyBudget: string;
-    totalBudget: string;
-    validUntil: number;
-  };
   payments: {
     id: string;
-    service: string;
     amount: string;
     recipient: string;
     status: PaymentStatus;
     createdAt: string;
     policyVersion: number;
-    decisionReason?: string;
-    decisionRef?: string;
     transactionHash?: string;
-    requestHash: string;
   }[];
 };
 export default function Showcase() {
@@ -77,7 +64,7 @@ export default function Showcase() {
       <section className="proof-intro">
         <h1>
           {paid
-            ? "An agent paid for research. You can verify it."
+            ? "Verify an agent payment on Aevum."
             : "Follow a governed agent payment."}
         </h1>
         <p>
@@ -106,47 +93,11 @@ export default function Showcase() {
               <strong>{formatMoney(data.balance)} tUSD8</strong>
             </div>
             <div>
-              <span>Per-payment cap</span>
-              <strong>{formatMoney(data.policy.perPaymentLimit)} tUSD8</strong>
+              <span>Vault on Aevum</span>
+              <a href={`https://explorer-test.qday.info/address/${data.treasuryId}`} target="_blank" rel="noreferrer">
+                {shorten(data.treasuryId)}
+              </a>
             </div>
-            <div>
-              <span>Weekly budget</span>
-              <strong>{formatMoney(data.policy.weeklyBudget)} tUSD8</strong>
-            </div>
-          </section>
-          <section className="proof-mandate">
-            <div className="proof-section-title">
-              <h2>The owner’s mandate</h2>
-              <span>Version {data.policy.version}</span>
-            </div>
-            <blockquote>{data.policy.mandate}</blockquote>
-            <details>
-              <summary>Inspect policy and vault references</summary>
-              <dl>
-                <div>
-                  <dt>Mandate hash</dt>
-                  <dd>{data.policy.mandateHash}</dd>
-                </div>
-                <div>
-                  <dt>Vault on Aevum</dt>
-                  <dd>
-                    <a
-                      href={`https://explorer-test.qday.info/address/${data.treasuryId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {data.treasuryId}
-                    </a>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Expiry</dt>
-                  <dd>
-                    {new Date(data.policy.validUntil * 1000).toLocaleString()}
-                  </dd>
-                </div>
-              </dl>
-            </details>
           </section>
           <section className="proof-payments">
             <h2>Requests, decisions and settlement</h2>
@@ -155,7 +106,7 @@ export default function Showcase() {
                 <article className="proof-payment" key={payment.id}>
                   <div className="proof-payment-heading">
                     <div>
-                      <h3>{payment.service}</h3>
+                      <h3 title={payment.id}>Request {shorten(payment.id)}</h3>
                       <span>Mandate v{payment.policyVersion}</span>
                     </div>
                     <strong>{formatMoney(payment.amount)} tUSD8</strong>
@@ -163,44 +114,25 @@ export default function Showcase() {
                       {statusLabel(payment.status)}
                     </span>
                   </div>
-                  <p className="proof-reason">
-                    {payment.decisionReason ||
-                      "Waiting for a finalized policy decision."}
-                  </p>
                   <dl>
-                    <div>
-                      <dt>Request</dt>
-                      <dd title={payment.id}>{shorten(payment.id)}</dd>
-                    </div>
                     <div>
                       <dt>Recipient</dt>
                       <dd>{payment.recipient}</dd>
                     </div>
-                    {payment.decisionRef ? (
+                    {payment.transactionHash ? (
                       <div>
-                        <dt>GenLayer decision</dt>
-                        <dd>{payment.decisionRef}</dd>
-                      </div>
-                    ) : null}
-                    <div>
-                      <dt>Aevum settlement</dt>
-                      <dd>
-                        {payment.transactionHash ? (
+                        <dt>Aevum settlement</dt>
+                        <dd>
                           <a
                             href={`https://explorer-test.qday.info/tx/${payment.transactionHash}`}
                             target="_blank"
                             rel="noreferrer"
                           >
-                            Verify transaction{" "}
-                            {shorten(payment.transactionHash)}
+                            Verify transaction {shorten(payment.transactionHash)}
                           </a>
-                        ) : payment.status === "rejected" ? (
-                          "Rejected; no payment executed."
-                        ) : (
-                          "Awaiting settlement."
-                        )}
-                      </dd>
-                    </div>
+                        </dd>
+                      </div>
+                    ) : null}
                   </dl>
                 </article>
               ))

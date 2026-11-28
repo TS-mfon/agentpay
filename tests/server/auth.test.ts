@@ -27,7 +27,7 @@ describe("owner authentication", () => {
     expect(verifier.verify).toHaveBeenCalledWith(owner, account.address, challenge.message, signature);
     expect(await auth.identity(session.token)).toEqual({ owner, signer: account.address });
     verifier.isCurrent.mockResolvedValue(false);
-    await expect(auth.identity(session.token, true)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(auth.identity(session.token)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(auth.verify(proof)).rejects.toMatchObject({ code: "NONCE_EXPIRED" });
   });
 

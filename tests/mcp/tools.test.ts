@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransport, type JSONRPCMessage } from "@modelcontextprotocol/server";
 import { createAgentPayServer } from "../../mcp/tools";
 import { AgentPayClient } from "../../mcp/client";
-import { treasuryFixture, policyFixture, paymentFixture } from "./fixtures";
+import { agentPaymentFixture, paymentFixture } from "./fixtures";
 
 async function setup() {
   const fetcher = vi.fn(async (url: string | URL | Request, options?: RequestInit) => {
     const path = new URL(String(url)).pathname;
-    const data = path.endsWith("treasury") ? treasuryFixture : path.endsWith("policy") ? policyFixture : path.endsWith("payments") && options?.method !== "POST" ? [paymentFixture()] : paymentFixture();
+    const data = path.endsWith("payments") && options?.method !== "POST" ? [paymentFixture()] : paymentFixture();
     return new Response(JSON.stringify({success:true,data}));
   });
   const client = new AgentPayClient("https://agentpay.example", "ap_" + "a".repeat(43), {fetch:fetcher});
@@ -26,11 +26,11 @@ async function setup() {
   return {server,caller,call,fetcher,client};
 }
 describe("AgentPay MCP tool protocol", () => {
-  it("advertises 5 scoped tools with payment side effects identified", async () => {
+  it("advertises only payment tools with spending side effects identified", async () => {
     const s=await setup();
     try {
       const result=await s.call("tools/list");
-      expect(result.result.tools.map((tool:any)=>tool.name)).toEqual(["agentpay_treasury","agentpay_policy","agentpay_request_payment","agentpay_payment_status","agentpay_payment_history"]);
+      expect(result.result.tools.map((tool:any)=>tool.name)).toEqual(["agentpay_request_payment","agentpay_payment_status","agentpay_payment_history"]);
       const spend=result.result.tools.find((tool:any)=>tool.name==="agentpay_request_payment");
       expect(spend.annotations.readOnlyHint).toBe(false);
       expect(spend.annotations.destructiveHint).toBe(true);
@@ -48,25 +48,24 @@ describe("AgentPay MCP tool protocol", () => {
   it("routes all read tools to their authorized API and bounds history", async () => {
     const s=await setup();
     try {
-      for(const name of ["agentpay_treasury","agentpay_policy","agentpay_payment_status"]) {
-        const args=name==="agentpay_payment_status" ? {id:"0x"+"b".repeat(64)} : {};
-        const reply=await s.call("tools/call",{name,arguments:args});
-        expect(reply.result.isError).not.toBe(true);
-      }
+      const id = "0x" + "b".repeat(64);
+      const reply = await s.call("tools/call", { name: "agentpay_payment_status", arguments: { id } });
+      expect(reply.result.isError).not.toBe(true);
+      expect(s.fetcher.mock.calls[0]?.[0]).toBe("https://agentpay.example/api/v1/payments/" + id);
       s.fetcher.mockImplementation(async()=>new Response(JSON.stringify({success:true,data:[paymentFixture(),paymentFixture("0x"+"d".repeat(64))]})));
       const history=await s.call("tools/call",{name:"agentpay_payment_history",arguments:{limit:1}});
-      expect(JSON.parse(history.result.content[0].text).data).toEqual([paymentFixture()]);
+      expect(JSON.parse(history.result.content[0].text).data).toEqual([agentPaymentFixture()]);
     } finally {await s.server.close();}
   });
   it("reports API denial and unexpected failures without leaking details", async () => {
     const s=await setup();
     try {
       s.fetcher.mockImplementation(async()=>new Response(JSON.stringify({success:false,error:{code:"UNAUTHORIZED",message:"secret-value"}}),{status:401}));
-      const denied=await s.call("tools/call",{name:"agentpay_treasury",arguments:{}});
+      const denied=await s.call("tools/call",{name:"agentpay_payment_status",arguments:{id:"0x"+"b".repeat(64)}});
       expect(denied.result.isError).toBe(true);
       expect(denied.result.content[0].text).not.toContain("secret-value");
-      vi.spyOn(s.client,"treasury").mockRejectedValue(new Error("internal-secret"));
-      const failed=await s.call("tools/call",{name:"agentpay_treasury",arguments:{}});
+      vi.spyOn(s.client,"payment").mockRejectedValue(new Error("internal-secret"));
+      const failed=await s.call("tools/call",{name:"agentpay_payment_status",arguments:{id:"0x"+"b".repeat(64)}});
       expect(failed.result.isError).toBe(true);
       expect(failed.result.content[0].text).toContain("TOOL_FAILED");
       expect(failed.result.content[0].text).not.toContain("internal-secret");

@@ -101,7 +101,7 @@ export class OwnerAuth {
   async owner(token: string | undefined) {
     return (await this.identity(token)).owner;
   }
-  async identity(token: string | undefined, mutating = false): Promise<OwnerIdentity> {
+  async identity(token: string | undefined): Promise<OwnerIdentity> {
     if (!token)
       throw new AppError(
         "UNAUTHORIZED",
@@ -117,9 +117,9 @@ export class OwnerAuth {
         "Your owner session expired. Sign in again.",
         401,
       );
-    if (session.signer && (!this.smartOwners || (mutating && !await this.smartOwners.isCurrent(
+    if (session.signer && (!this.smartOwners || !await this.smartOwners.isCurrent(
       session.owner as Address, session.signer as Address,
-    ))))
+    )))
       throw new AppError("UNAUTHORIZED", "Reconnect the wallet that controls this smart account.", 401);
     return { owner: session.owner, ...(session.signer ? { signer: session.signer } : {}) };
   }

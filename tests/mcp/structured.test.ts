@@ -6,14 +6,13 @@ import { AgentPayClient } from "../../mcp/client";
 const address = "0x" + "2".repeat(40);
 const requestId = "0x" + "b".repeat(64);
 const hash = "0x" + "c".repeat(64);
-const treasury = { id: address, owner: address, executor: address, token: address, agentId: hash, agentName: "Household agent", balance: "0.05", reservedBalance: "0.01", availableBalance: "0.04", weeklySpent: "0", totalSpent: "0", active: true, paused: false, policyVersion: 1, keyVersion: 2 };
 const policy = { treasuryId: address, agentId: hash, version: 1, mandate: "Pay only household bills", mandateHash: hash, perPaymentLimit: "10", weeklyBudget: "40", totalBudget: "200", validUntil: 1798058297, recipients: [address] };
 const payment = { id: requestId, treasuryId: address, agentId: hash, recipient: address, amount: "0.001", amountUnits: "1000", service: "Water bill", purpose: "Pay household water bill", evidence: "Owner-requested test", idempotencyKey: "water-test-001", policyVersion: 1, mandateHash: hash, requestHash: hash, status: "settled", attempts: 3, createdAt: "2026-11-23T20:00:00.000Z", expiresAt: "2026-11-23T21:00:00.000Z", decisionRef: hash, transactionHash: hash };
 
 async function setup() {
   const fetcher = vi.fn(async (url: string | URL | Request) => {
     const path = new URL(String(url)).pathname;
-    const data = path.endsWith("treasury") ? treasury : path.endsWith("policy") ? policy : path.endsWith("payments") ? [payment] : payment;
+    const data = path.endsWith("payments") ? [payment] : payment;
     return new Response(JSON.stringify({success: true, data}));
   });
   const client = new AgentPayClient("https://agentpay.example", "ap_" + "a".repeat(43), {fetch: fetcher});
@@ -37,50 +36,51 @@ describe("MCP structured payment contract", () => {
     try { const reply = await s.call("tools/list"); expect(reply.result.tools.every((t: any) => t.outputSchema?.type === "object")).toBe(true); }
     finally { await s.server.close(); }
   });
-  it("returns the exact identity, available funds and expiry units as structured content", async () => {
-    const s = await setup();
-    try {
-      const t = await s.call("tools/call", {name: "agentpay_treasury", arguments: {}});
-      expect(t.result.structuredContent.data).toMatchObject({id: address, agentId: hash, reservedBalance: "0.01", availableBalance: "0.04"});
-      const p = await s.call("tools/call", {name: "agentpay_policy", arguments: {}});
-      expect(p.result.structuredContent.data).toMatchObject({validUntil: 1798058297, authorizationExpiresAt: "2026-12-23T20:38:17.000Z"});
-      expect(JSON.parse(p.result.content[0].text)).toEqual(p.result.structuredContent);
-    } finally { await s.server.close(); }
-  });
-  it("preserves unknown availability on an older API instead of inventing reservations", async () => {
-    const s = await setup();
-    const {reservedBalance: _reserved, availableBalance: _available, ...legacyTreasury} = treasury;
-    s.fetcher.mockImplementation(async () => new Response(JSON.stringify({success: true, data: legacyTreasury})));
-    try {
-      const reply = await s.call("tools/call", {name: "agentpay_treasury", arguments: {}});
-      expect(reply.result.isError).not.toBe(true);
-      expect(reply.result.structuredContent.data.balance).toBe("0.05");
-      expect(reply.result.structuredContent.data).not.toHaveProperty("reservedBalance");
-      expect(reply.result.structuredContent.data).not.toHaveProperty("availableBalance");
-      expect(reply.result.structuredContent.data).not.toHaveProperty("spendableBalance");
-    } finally { await s.server.close(); }
-  });
-  it("preserves every receipt binding and strips undeclared upstream secrets", async () => {
+  it("keeps Aevum receipt bindings and strips private fields even from an older upstream", async () => {
     const s = await setup();
     const rawMarker = globalThis.crypto.randomUUID();
     const credentialMarker = globalThis.crypto.randomUUID();
-    s.fetcher.mockImplementation(async () => new Response(JSON.stringify({success: true, data: {...payment, rawTransaction: rawMarker, apiKey: credentialMarker}})));
+    s.fetcher.mockImplementation(async () => new Response(JSON.stringify({ success: true, data: {
+      ...payment, ...policy, decisionReason: "PRIVATE_DECISION", error: "PRIVATE_ERROR",
+      rawTransaction: rawMarker, apiKey: credentialMarker,
+    } })));
     try {
       const p = await s.call("tools/call", {name: "agentpay_payment_status", arguments: {id: requestId}});
-      expect(p.result.structuredContent.data).toMatchObject({treasuryId: address, agentId: hash, requestHash: hash, mandateHash: hash, policyVersion: 1, decisionRef: hash, transactionHash: hash, amountUnits: "1000"});
+      const data = p.result.structuredContent.data;
+      expect(data).toMatchObject({treasuryId: address, agentId: hash, requestHash: hash, policyVersion: 1, transactionHash: hash, amountUnits: "1000"});
+      for (const key of ["mandate", "mandateHash", "weeklyBudget", "totalBudget", "perPaymentLimit", "decisionRef", "decisionReason", "error", "purpose", "evidence", "service"])
+        expect(data).not.toHaveProperty(key);
+      expect(JSON.parse(p.result.content[0].text)).toEqual(p.result.structuredContent);
       expect(JSON.stringify(p)).not.toContain(rawMarker);
       expect(JSON.stringify(p)).not.toContain(credentialMarker);
     } finally { await s.server.close(); }
   });
-  it("does not accept a settled record that omits its settlement or decision reference", async () => {
+  it("keeps simulated settlements and failed transactions distinct from a verified receipt", async () => {
     const s = await setup();
     try {
-      for (const field of ["transactionHash", "decisionRef"]) {
-        s.fetcher.mockImplementation(async () => new Response(JSON.stringify({success: true, data: {...payment, [field]: undefined}})));
-        const reply = await s.call("tools/call", {name: "agentpay_payment_status", arguments: {id: requestId}});
-        expect(reply.result.isError).toBe(true);
-        expect(reply.result.structuredContent.error.code).toBe("INVALID_RESPONSE");
+      for (const example of [
+        { status: "settled", transactionHash: "simulation:" + requestId, expected: undefined },
+        { status: "failed", transactionHash: hash, expected: hash },
+        { status: "settled", transactionHash: hash, expected: hash },
+      ]) {
+        s.fetcher.mockImplementation(async () => new Response(JSON.stringify({ success: true, data: {
+          ...payment, status: example.status, transactionHash: example.transactionHash, decisionRef: undefined,
+        } })));
+        const reply = await s.call("tools/call", { name: "agentpay_payment_status", arguments: { id: requestId } });
+        expect(reply.result.isError).not.toBe(true);
+        const data = reply.result.structuredContent.data;
+        expect(data.status).toBe(example.status);
+        expect(data.transactionHash).toBe(example.expected);
+        expect(data.requestHash).toBe(example.status === "settled" && example.expected ? hash : undefined);
       }
+    } finally { await s.server.close(); }
+  });
+  it("fails safely when an Aevum settlement is missing its purchase binding", async () => {
+    const s = await setup();
+    try {
+      s.fetcher.mockImplementation(async () => new Response(JSON.stringify({ success: true, data: { ...payment, requestHash: undefined } })));
+      const reply = await s.call("tools/call", { name: "agentpay_payment_status", arguments: { id: requestId } });
+      expect(reply.result.structuredContent.error.code).toBe("INVALID_RESPONSE");
     } finally { await s.server.close(); }
   });
   it("fails safely on an upstream record that cannot satisfy the payment schema", async () => {

@@ -22,10 +22,9 @@ export async function GET(request: Request) {
     const state = await runtime.store.read();
     const treasury = state.treasuries.find((t) => sameAddress(t.id, selected));
     if (!treasury) throw unavailable();
-    const dashboard = await runtime.service.dashboard(treasury.owner);
+    const dashboard = await runtime.service.dashboard(treasury.owner, treasury.id);
     if (!dashboard.treasury || !sameAddress(dashboard.treasury.id, selected))
       throw unavailable();
-    const policy = dashboard.policy;
     return {
       mode: "live",
       treasuryId: dashboard.treasury.id,
@@ -33,29 +32,14 @@ export async function GET(request: Request) {
       balance: dashboard.treasury.balance,
       paused: dashboard.treasury.paused,
       active: dashboard.treasury.active,
-      policy: policy
-        ? {
-            version: policy.version,
-            mandate: policy.mandate,
-            mandateHash: policy.mandateHash,
-            perPaymentLimit: policy.perPaymentLimit,
-            weeklyBudget: policy.weeklyBudget,
-            totalBudget: policy.totalBudget,
-            validUntil: policy.validUntil,
-          }
-        : null,
       payments: dashboard.payments.slice(0, 20).map((payment) => ({
         id: payment.id,
-        service: payment.service,
         amount: payment.amount,
         recipient: payment.recipient,
         status: payment.status,
         createdAt: payment.createdAt,
         policyVersion: payment.policyVersion,
-        decisionReason: payment.decisionReason,
-        decisionRef: payment.decisionRef,
-        transactionHash: payment.transactionHash,
-        requestHash: payment.requestHash,
+        ...(payment.status === "settled" ? { transactionHash: payment.transactionHash } : {}),
       })),
     };
   });

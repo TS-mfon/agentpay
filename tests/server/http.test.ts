@@ -62,7 +62,7 @@ describe("API envelope and boundary security", () => {
     expect(
       await owner(request({ cookie: "other=1; agentpay_session=token" }), live),
     ).toBe(DEMO_OWNER);
-    expect(live.auth.identity).toHaveBeenCalledWith("token", false);
+    expect(live.auth.identity).toHaveBeenCalledWith("token");
   });
   it("requires bearer credentials for the agent API", async () => {
     const runtime = fixture.runtime as Parameters<typeof agent>[1];

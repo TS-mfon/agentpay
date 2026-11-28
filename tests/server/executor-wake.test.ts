@@ -21,9 +21,9 @@ const origin = "https://agentpay.example";
 const start = 1900000000000;
 const github = vi.fn<typeof fetch>();
 const duePayment: Payment = {
-  id: "request", treasuryId: "vault", agentId: "agent", policyVersion: 1,
-  mandateHash: "mandate", requestHash: "hash", amount: "0.001", amountUnits: "1000",
-  recipient: "recipient", service: "Test", purpose: "Nominal integration test.",
+  id: "0x" + "a".repeat(64), treasuryId: "0x" + "1".repeat(40), agentId: "0x" + "b".repeat(64), policyVersion: 1,
+  mandateHash: "0x" + "c".repeat(64), requestHash: "0x" + "d".repeat(64), amount: "0.001", amountUnits: "1000",
+  recipient: "0x" + "2".repeat(40), service: "Test", purpose: "Nominal integration test.",
   evidence: "", idempotencyKey: "fixture-purchase",
   createdAt: new Date(start - 1000).toISOString(), expiresAt: new Date(start + 3600000).toISOString(),
   status: "queued", attempts: 0,
