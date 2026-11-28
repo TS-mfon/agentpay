@@ -32,7 +32,7 @@ jobs:
         run: npm run worker
         env:
           AGENTPAY_MODE: live
-          AGENTPAY_WORKER_BATCH: ${{ inputs.batch || '4' }}
+          AGENTPAY_WORKER_BATCH: ${{ inputs.batch || '20' }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           AGENTPAY_DATABASE: ${{ vars.AGENTPAY_DATABASE }}
           AEVUM_RPC_URL: https://rpc-test.qday.info

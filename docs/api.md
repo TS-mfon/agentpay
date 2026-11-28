@@ -57,7 +57,7 @@ The request binds treasury ID, agent ID, stable purchase key, exact normalized p
 
 Main lifecycle: `queued` → `awaiting_finality` → `approved` → `executing` → `settled`. A mandate that needs registration also passes through `evaluating`. The worker journals the signed GenLayer registration/evaluation envelope and hash before broadcast; losing the RPC response cannot erase that submitted identity. `rejected` and `needs_information` never authorize settlement. Failed and expired requests remain inspectable. Accepted GenLayer consensus is insufficient: the worker requires finalized successful consensus and matching request/mandate/version references.
 
-GitHub Actions normally checks every five minutes, with variable scheduling and finality latency. Requests expire within one hour or at mandate expiry, whichever is earlier. `createdAt` and `expiresAt` use ISO UTC. Payment records may include these processing fields.
+Configured deployments can ask GitHub to start the executor after a payment submission or browser visit. A five-minute cron also schedules checks. GitHub can delay or skip scheduled runs, and finality may require another run. Requests expire within one hour or at mandate expiry, whichever is earlier. `createdAt` and `expiresAt` use ISO UTC. Payment records may include these processing fields.
 
 | Optional field | Meaning |
 | --- | --- |

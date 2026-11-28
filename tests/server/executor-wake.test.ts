@@ -175,4 +175,14 @@ describe("executor dispatch after a site visit", () => {
     expect(next.runtime).not.toHaveBeenCalled();
     expect(github).not.toHaveBeenCalled();
   });
+
+  it("uses the linked GitHub repository when the deployment has no explicit repository setting", async () => {
+    vi.stubEnv("GITHUB_REPOSITORY", "");
+    vi.stubEnv("VERCEL_GIT_PROVIDER", "github");
+    vi.stubEnv("VERCEL_GIT_REPO_OWNER", "TS-mfon");
+    vi.stubEnv("VERCEL_GIT_REPO_SLUG", "agentpay");
+    await runVisit();
+    expect(github).toHaveBeenCalledOnce();
+    expect(String(github.mock.calls[0][0])).toContain("/repos/TS-mfon/agentpay/actions/");
+  });
 });

@@ -48,7 +48,10 @@ async function dispatchIfDue(store: AtomicStore, repository: string, credential:
 }
 
 export function scheduleExecutorWake(submissionRuntime?: Runtime) {
-  const repository = process.env.GITHUB_REPOSITORY?.trim();
+  const { GITHUB_REPOSITORY, VERCEL_GIT_PROVIDER, VERCEL_GIT_REPO_OWNER, VERCEL_GIT_REPO_SLUG } = process.env;
+  const linkedRepository = VERCEL_GIT_PROVIDER === "github" && VERCEL_GIT_REPO_OWNER && VERCEL_GIT_REPO_SLUG
+    ? `${VERCEL_GIT_REPO_OWNER}/${VERCEL_GIT_REPO_SLUG}` : undefined;
+  const repository = GITHUB_REPOSITORY?.trim() || linkedRepository;
   const credential = process.env.GITHUB_DISPATCH_TOKEN?.trim();
   if (process.env.AGENTPAY_MODE === "demo" || !credential ||
       !repository || !/^[A-Za-z0-9-]+\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/.test(repository))

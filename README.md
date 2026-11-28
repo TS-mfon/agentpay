@@ -606,7 +606,7 @@ Create the protected `agentpay-testnet` environment used by [.github/workflows/e
 | `AEVUM_EXECUTOR_ADDRESS` | Expected settlement account |
 | `GENLAYER_CONTRACT_ADDRESS` | Governance contract to evaluate mandates |
 
-The workflow checks bounded work about every five minutes and supports manual dispatch. Scheduled runs use four state-processing operations per run; manual test/recovery dispatch can select 4, 10, or 20. These are state transitions, not a guarantee of completed payments. The runner closes MongoDB and RPC connections on completion or failure.
+The executor has a five-minute cron. Scheduled runs allow up to 20 state-processing operations, and manual runs can select 4, 10, or 20. A worker can revisit retries that become due within 150 seconds of its start, subject to its operation cap. The runner closes MongoDB and RPC connections on completion or failure.
 
 The [queue scheduler](src/core/queue.ts) expires eligible unexecuted requests without RPC and selects work only when both its ownership lease and `retryAt` are due. A leased request does not hide independent due inspections or reconciliation. New shared-contract governance writes remain serialized while an earlier write is unresolved, and an uncertain executor transaction blocks preparation of another settlement transaction to prevent nonce reuse.
 
